@@ -138,7 +138,7 @@ sudo nano serve_openbox.sh
 set -e  
 echo "Starting deployment..."
 # Navigate to the project directory
-cd ~/projects/report_manager || exit
+cd ~/projects/openbox || exit
 # Reset and pull latest changes from Git
 sudo git reset --hard
 sudo git pull -f origin main
@@ -150,7 +150,7 @@ python manage.py collectstatic --noinput
 deactivate  
 # Reload systemd and restart services
 sudo systemctl daemon-reload
-sudo systemctl restart report_manager
+sudo systemctl restart openbox
 sudo systemctl restart nginx
 
 echo "✅ Successfully Deployed and Restarted"
