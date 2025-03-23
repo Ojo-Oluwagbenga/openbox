@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap"> -->
+    <title>Mail Confirmation</title>
+</head>
+<body style="font-family: 'Poppins', sans-serif;">
+    <div class="content" style="width: 95%;
+        background-color: rgb(218, 218, 248);
+        border-radius: 15px;
+        padding: 10px;">
+        <div class="head" style="border-bottom: 2px solid rgb(121, 121, 121);
+        padding: 10px 0;">
+            <div class="sendset" style="display: flex;">
+                <img  style="height: 80px; width: 80px; border-radius: 50%;" src="https://oneklass.com.ng/static/general/images/wgtbam.png"/>
+
+                <div class="det-hold c-vert" style="margin-left: 10px; margin-top: 20px;
+                justify-content: center;">
+                    <span class="name top" style="padding:10px 4px; font-weight: bold;font-size: 15px;">OAU WGTBAM 2024</span>
+                    <br>
+                    <span class="name bot" style="padding:0px 4px; color: grey; font-size: 12px;">@Obafemi Awolowo University</span>
+                </div>
+            </div>
+        </div>
+        <div class="body" style="padding: 10px;
+        font-size: 13px;">
+            <p>Hey {{username}}, <br><br>
+                Welcome to OAU Who Gets To Be A Millionaire. Your account has been successfully created.<br><br>
+                
+                We are pleased to announce that our esteemed headline sponsor, Oraimo, will be visiting our campus on June 25th and 26th. During their visit, 
+                they will be stationed at the Sub car park, where they will be offering exciting prizes, 
+                including power banks, ear pods, clippers, and more. 
+                The culmination of Oraimo's campus visit will be the grand finale event, "OAU Who Gets to be a Millionaire," which will take place on 
+                <b>Thursday, June 27th at 11am at Oduduwa Hall</b>. We encourage all students to attend and participate in this event.<br><br>
+                Additionally, we remind you to exercise your right to vote in the upcoming elections. Your vote is crucial in shaping our community's future.
+                <br><br>
+                Thank you, and we look forward to making this event a resounding success!"<br>
+
+                Please check your {{reg_type}} ID below: 
+                <a class="reset" href="https://oauwgtbam.vercel.app/registration" id="reset" style="padding: 10px 0;
+                    background-color: white;
+                    border-radius: 5px;
+                    text-decoration: none;
+                    color: black;
+                    text-align: center;
+                    width: 100%;
+                    display: block;
+                    font-weight: bold;
+                    font-size: 18px;
+                    margin-top: 15px;">ID: {{code}}</a>
+                
+            </p>
+            <p>
+                If you did not make this request then please ignore this email.<br>
+            </p>
+            
+        </div>
+        
+            
+    </div>
+</body>
+</html>

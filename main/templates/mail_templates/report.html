@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;700&display=swap"> -->
+    <title>Report</title>
+</head>
+<body style="font-family: 'Poppins', sans-serif;">
+    <div class="content" style="width: 95%;
+        background-color: rgb(218, 218, 248);
+        border-radius: 15px;
+        padding: 10px;">
+        <div class="head" style="border-bottom: 2px solid rgb(121, 121, 121);
+        padding: 10px 0;">
+            <div class="sendset" style="display: flex;">
+                <div class="imagehold" style="height: 80px;
+                overflow: hidden;
+                border-radius: 100%;">
+                    <img  style="height: 100%;" src="https://i.ibb.co/vqYkh0q/oneklass-logo-min-1.png"/>
+                </div>
+                <div class="det-hold c-vert" style="display: flex;
+                flex-direction: column;margin-left: 10px;
+                justify-content: center;">
+                    <div class="name top" style="padding:4px; font-weight: bold;font-size: 15px;">One<span style="color: blue;">Klass</span></div>
+                    <div class="name bot" style="padding:4px; color: grey; font-size: 12px;">@Obafemi Awolowo University</div>
+                </div>
+            </div>
+        </div>
+        <div class="body" style="padding: 10px;font-size: 13px;">
+            <p>
+                <b>Sent by: {{sender_email}}</b>
+            </p>
+            <p>
+                {{report_text}}
+            </p>
+        </div>
+        
+            
+    </div>
+</body>
+</html>

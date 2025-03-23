@@ -1,0 +1,165 @@
+STEPS TO DEPLOY ON MY CLOUD
+https://templatemo.com/tm-512-moonlight
+https://templatemo.com/tm-590-topic-listing
+https://www.digitalocean.com/community/tutorials/how-to-set-up-django-with-postgres-nginx-and-gunicorn-on-ubuntu#step-8-checking-for-the-gunicorn-socket-file
+
+CREATE A GIT REPO 
+
+INITIALIZE GIT IN PROJECT
+git init
+git checkout -b main  //This will first set the branch that all add and commits are going.
+git branch -M main
+
+REMOVE THE SETTINGS FILE FROM THE GITGINORE
+create the .gitignore file and include the settings, and asgi
+git rm -r --cached .  
+
+COMMIT TO THE MAIN
+git add .;git commit -m "General Commit"; git push -u origin main
+
+OPEN THE CLOUD
+
+CREATE OPENBOX DB
+sudo -u postgres psql
+CREATE DATABASE openbox;
+CREATE USER openbox_user WITH PASSWORD 'enterpassword';
+ALTER ROLE openbox_user SET client_encoding TO 'utf8';
+ALTER ROLE openbox_user SET default_transaction_isolation TO 'read committed';
+ALTER ROLE openbox_user SET timezone TO 'UTC';
+GRANT ALL PRIVILEGES ON DATABASE openbox TO openbox_user;
+\q #TO EXIT
+
+CREATE THE FOLDER FOR OPENBOX openbox
+mkdir projects/openbox
+cd projects/openbox
+git init
+git remote add origin https://github.com/Ojo-Oluwagbenga/Oneklass_v2.git
+git pull origin the_branch --allow-unrelated-histories or git pull -f origin main
+cd openbox/openbox
+sudo nano settings.py and include
+import os
+__all settings data
+CSRF_TRUSTED_ORIGINS = ["projame.com"]
+ALLOWED_HOSTS = ["https://projame.com"]
+STATIC_ROOT = os.path.join(BASE_DIR, 'static/')
+save and exit ctrl x y enter
+
+sudo nano asgi.py
+__all asgi data
+
+ACTIVATE THE ENVIRONMENT TO FINISH DB SETTINGS
+cd
+source projects/oneklassenv/bin/ACTIVATE
+cd projects/openbox
+python manage.py makemigrations
+python manage.py migrate
+python manage.py collectstatic
+python manage.py createsuperuser #if you will
+
+============ SET UP GUNICORN SOCKET AND SERVICE ==============
+
+sudo nano /etc/systemd/system/openbox.socket
+[Unit]
+Description=openbox socket
+
+[Socket]
+ListenStream=/run/openbox.sock
+
+[Install]
+WantedBy=sockets.target
+SAVE AND EXIT
+
+======== SET UP THE SERVICE =============
+sudo nano /etc/systemd/system/openbox.service
+
+[Unit]
+Description=openbox daemon
+Requires=openbox.socket
+After=network.target
+
+[Service]
+User=rider
+Group=www-data
+WorkingDirectory=/home/rider/projects/openbox
+ExecStart=/home/rider/projects/oneklassenv/bin/gunicorn \
+          --access-logfile - \
+          -k uvicorn.workers.UvicornWorker \
+          --workers 3 \
+          --bind unix:/run/openbox.sock \
+          openbox.asgi:application
+
+[Install]
+WantedBy=multi-user.target
+
+==== START THE SERVICES ========
+sudo systemctl start openbox.socket
+sudo systemctl enable openbox.socket
+sudo systemctl status openbox.socket
+sudo journalctl -u openbox.socket
+sudo systemctl status openbox
+
+sudo systemctl daemon-reload
+sudo systemctl restart openbox
+
+===== CONNECT THE DOMAIN NAME ======
+sudo nano /etc/nginx/sites-available/server_domain_or_IP #eg oneklass.com.ng
+server {
+    listen 80;
+    server_name server_domain_or_IP; #EG oneklass.com.ng
+
+    location = /favicon.ico { access_log off; log_not_found off; }
+    location /static/ {
+        root /home/rider/projects/openbox;
+    }
+
+    location / {
+        include proxy_params;
+        proxy_pass http://unix:/run/openbox.sock;
+    }
+}
+
+LINK THE SITE
+sudo ln -s /etc/nginx/sites-available/server_domain_or_IP /etc/nginx/sites-enabled
+sudo nginx -t
+sudo systemctl restart nginx
+
+GET A CERTIFICATE
+sudo apt remove certbot
+sudo snap install --classic certbot
+sudo ln -s /snap/bin/certbot /usr/bin/certbot
+sudo certbot --nginx -d server_domain_or_IP
+
+==== SET UP AUTO DEPLOY MECHANISM ====
+cd
+sudo nano serve_openbox.sh
+
+#!/bin/bash
+# Exit if any command fails
+set -e  
+echo "Starting deployment..."
+# Navigate to the project directory
+cd ~/projects/report_manager || exit
+# Reset and pull latest changes from Git
+sudo git reset --hard
+sudo git pull -f origin main
+# Activate the virtual environment
+source ~/projects/oneklassenv/bin/activate  
+# Collect static files
+python manage.py collectstatic --noinput  
+# Deactivate virtual environment
+deactivate  
+# Reload systemd and restart services
+sudo systemctl daemon-reload
+sudo systemctl restart report_manager
+sudo systemctl restart nginx
+
+echo "✅ Successfully Deployed and Restarted"
+
+save and exit
+
+MAKE IT Executable ON SIMPLE COMMAND
+sudo chmod +x serve_openbox.sh
+./serve_openbox.sh
+
+DONE
+
