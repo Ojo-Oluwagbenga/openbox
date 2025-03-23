@@ -22,18 +22,18 @@ OPEN THE CLOUD
 CREATE OPENBOX DB
 sudo -u postgres psql
 CREATE DATABASE openbox;
-CREATE USER openbox_user WITH PASSWORD 'enterpassword';
+CREATE USER openbox_user WITH PASSWORD '12345';
 ALTER ROLE openbox_user SET client_encoding TO 'utf8';
 ALTER ROLE openbox_user SET default_transaction_isolation TO 'read committed';
 ALTER ROLE openbox_user SET timezone TO 'UTC';
 GRANT ALL PRIVILEGES ON DATABASE openbox TO openbox_user;
-\q #TO EXIT
+\q
 
 CREATE THE FOLDER FOR OPENBOX openbox
 mkdir projects/openbox
 cd projects/openbox
 git init
-git remote add origin https://github.com/Ojo-Oluwagbenga/Oneklass_v2.git
+git remote add origin https://github.com/Ojo-Oluwagbenga/openbox.git
 git pull origin the_branch --allow-unrelated-histories or git pull -f origin main
 cd openbox/openbox
 sudo nano settings.py and include
@@ -49,7 +49,7 @@ __all asgi data
 
 ACTIVATE THE ENVIRONMENT TO FINISH DB SETTINGS
 cd
-source projects/oneklassenv/bin/ACTIVATE
+source projects/oneklassenv/bin/activate
 cd projects/openbox
 python manage.py makemigrations
 python manage.py migrate
