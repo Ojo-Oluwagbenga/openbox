@@ -458,8 +458,7 @@ class UserAPI(View):
 
     def create(self, response):
         if (response.method == "POST"):
-            fulldata =  json.loads(response.body.decode('utf-8'))
-            data = fulldata['payload']
+            data =  json.loads(response.body.decode('utf-8'))
             callresponse = {
                 'passed': False,
                 'response':data,
@@ -479,6 +478,7 @@ class UserAPI(View):
             if (not callresponse['passed']):
                 return HttpResponse(json.dumps(callresponse))
             
+            #CHECK IF USER NEVER EXISTED
             if (User.objects.filter(email=user_sl.validated_data.get('email')).count() > 0):
                 callresponse['passed'] = False
                 callresponse['error']['email'] = "The provided email is already registered"
