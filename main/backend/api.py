@@ -581,16 +581,38 @@ class UserAPI(View):
     @csrf_exempt
     def add_document(self, response):
         if response.method == 'POST' and response.FILES.get('document'):
-            uploaded_file = response.FILES['document']
-            upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploaded')
-            os.makedirs(upload_dir, exist_ok=True)  # ✅ Create the directory if missing
+            callresponse = {
+                'passed': False,
+                'response':{},
+                'error':{}
+            }
+            # user_code = response.session['user_data']['user_code']
+            # box_code = response.POST.get('box_code', 'boxcode')
 
-            file_path = os.path.join(upload_dir, uploaded_file.name)
+            user_code = 'usercode'
+            box_code = 'boxcode'
+            uploaded_file = response.FILES['document']
+
+            upload_subdir = os.path.join('uploaded', user_code, box_code)
+            upload_dir = os.path.join(settings.MEDIA_ROOT, upload_subdir)
+            os.makedirs(upload_dir, exist_ok=True)
+            
+            filename_no_ext, ext = os.path.splitext(uploaded_file.name)
+            new_filename = f"{filename_no_ext}_{int(time.time())}{ext}"
+            file_path = os.path.join(upload_dir, new_filename)
 
             with open(file_path, 'wb+') as dest:
                 for chunk in uploaded_file.chunks():
                     dest.write(chunk)
-            return JsonResponse({'message': 'Upload successful'})
+
+            file_url = os.path.join(settings.MEDIA_URL, upload_subdir, new_filename)
+            full_url = response.build_absolute_uri(file_url)
+            
+            callresponse['passed'] = True
+            callresponse['response'] = {
+                'upload_url':full_url
+            }
+            return HttpResponse(json.dumps(callresponse))
         return JsonResponse({'error': 'Invalid request'}, status=400)
 
 

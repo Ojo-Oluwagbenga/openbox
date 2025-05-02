@@ -1,12 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>File Upload Test</title>
+  <title>Upload File</title>
 </head>
 <body>
   <h2>Upload a Document</h2>
   <form id="uploadForm">
-    <input type="file" name="document" id="document" required>
+    <input type="file" id="document" name="document" required><br>
+    <input type="text" id="user_code" placeholder="Enter User Code" required><br>
+    <input type="text" id="box_code" placeholder="Enter Box Code" required><br>
     <button type="submit">Upload</button>
   </form>
 
@@ -18,18 +20,22 @@
     const progressBar = document.getElementById('progressBar');
     const statusText = document.getElementById('status');
 
-    form.addEventListener('submit', function(event) {
-      event.preventDefault();
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
 
       const fileInput = document.getElementById('document');
-      const file = fileInput.files[0];
+      const userCode = document.getElementById('user_code').value;
+      const boxCode = document.getElementById('box_code').value;
+
       const formData = new FormData();
-      formData.append('document', file);
+      formData.append('document', fileInput.files[0]);
+      formData.append('user_code', userCode);
+      formData.append('box_code', boxCode);
 
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', 'http://localhost:8000/api/user/add_document', true); // change URL if needed
+      xhr.open('POST', 'http://localhost:8000/api/user/add_document', true); // Update URL as needed
 
-      xhr.upload.addEventListener('progress', function(e) {
+      xhr.upload.addEventListener('progress', function (e) {
         if (e.lengthComputable) {
           const percent = (e.loaded / e.total) * 100;
           progressBar.style.display = 'block';
@@ -40,14 +46,15 @@
 
       xhr.onload = function () {
         if (xhr.status === 200) {
-          statusText.textContent = 'Upload successful!';
+          statusText.textContent = '✅ Upload successful!';
+          console.log('Response:', xhr.responseText);
         } else {
-          statusText.textContent = 'Upload failed.';
+          statusText.textContent = '❌ Upload failed.';
         }
       };
 
       xhr.onerror = function () {
-        statusText.textContent = 'Error uploading file.';
+        statusText.textContent = '❌ Error uploading file.';
       };
 
       xhr.send(formData);
