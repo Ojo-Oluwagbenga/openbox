@@ -1,6 +1,6 @@
 from django.db import models
 from django.contrib.postgres.fields import ArrayField
-
+import time
 
 # Create your models here.
 class User(models.Model):
@@ -49,8 +49,29 @@ class Pigeonhole(models.Model):
     box_id = models.CharField(max_length=100) #THIS IS THE SIMPLE IDENTIFIER WRITTEN ON THE BOX
     pg_code = models.CharField(max_length=100) #THIS IS ABSOLUTE IDENTIFIER ON THE SYSTEM
     status = models.CharField(max_length=100) #1 FOR BUSY AND 0 FOR AVAILABLE
-    create_time = models.CharField(default=0, max_length=100)
+    time = models.BigIntegerField(default=lambda: int(time.time()))
     price_per_hr = models.CharField(default=0, max_length=100)
+
+class Task(models.Model):
+    task_code = models.CharField(max_length=50)
+    task_type = models.CharField(max_length=50) #COULD BE printing, storage, movement
+    access_code = models.CharField(max_length=50) #CURRENT BOX ACCESS DIGIT FOR THIS TASK
+    box_code = models.CharField(max_length=50) #THE CURRENT BOX PERFORMNG THIS TASK
+    pg_code = models.CharField(max_length=50) #THE CURRENT SPECIFIC PG HOLE 
+    status = models.CharField(max_length=50, default="waiting") #COULD BE waiting, active, completed, terminated
+    time_in = models.BigIntegerField(default=lambda: int(time.time())) 
+    time_start = models.BigIntegerField(default=0) 
+    time_completed = models.BigIntegerField(default=0) 
+    time_terminated = models.BigIntegerField(default=0) 
+    package_data = models.JSONField(null=True) 
+    '''
+        {
+            package_type:"print_doc", "user_package",
+            document_source_url:'https://kkk/ups/jk.jpg'
+            package_weight:"",
+            task_history:[task_code1, task2] //THIS IS FOR CASES WHEN IT IS MOVED OR SO.
+        }
+    '''
 
 class Box_message(models.Model):
     message_code = models.CharField(max_length=100) 
@@ -60,7 +81,7 @@ class Box_message(models.Model):
     message_type = models.CharField(max_length=50) # different keys should be used here for different display
     text = models.CharField(max_length=600) 
     document_url = models.CharField(max_length=100) 
-    time = models.CharField(max_length=100) 
+    time = models.BigIntegerField(default=lambda: int(time.time()))
     otherdata = models.JSONField(null=True)
 
 
@@ -68,7 +89,7 @@ class Notification(models.Model):
     noti_code = models.CharField(max_length=50)
     callback_url = models.CharField(max_length=200)
     text = models.CharField(max_length=200)
-    time = models.CharField(max_length=100)
+    time = models.BigIntegerField(default=lambda: int(time.time()))
     category = models.CharField(max_length=50)
     owners = ArrayField(models.CharField(max_length=50))
     otherdata = models.JSONField(null=True)
@@ -89,27 +110,7 @@ class Transaction(models.Model):
     item_code = models.CharField(max_length=50) #WALLLET, BOX PAYMENT
     balance_to_date = models.FloatField() #This is only added on payment received
     amount = models.FloatField()
-    date = models.CharField(max_length=200)
+    time = models.BigIntegerField(default=lambda: int(time.time()))
     data = models.JSONField(null=True) #This contains other important data to this like withdrawal data
 
 
-class Task(models.Model):
-    task_code = models.CharField(max_length=50)
-    task_type = models.CharField(max_length=50) #COULD BE printing, storage, movement
-    access_code = models.CharField(max_length=50) #CURRENT BOX ACCESS DIGIT FOR THIS TASK
-    box_code = models.CharField(max_length=50) #THE CURRENT BOX PERFORMNG THIS TASK
-    pg_code = models.CharField(max_length=50) #THE CURRENT SPECIFIC PG HOLE 
-    status = models.CharField(max_length=50, default="waiting") #COULD BE waiting, active, completed, terminated
-    time_in = models.CharField(max_length=50) 
-    time_start = models.CharField(max_length=50) 
-    time_completed = models.CharField(max_length=50) 
-    time_terminated = models.CharField(max_length=50) 
-    package_data = models.JSONField(null=True) 
-    '''
-        {
-            package_type:"print_doc", "user_package",
-            document_source_url:'https://kkk/ups/jk.jpg'
-            package_weight:"",
-            task_history:[task_code1, task2] //THIS IS FOR CASES WHEN IT IS MOVED OR SO.
-        }
-    '''

@@ -845,13 +845,47 @@ class Box_messagesAPI(View):
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
 
-    def buildstring(address):
-        addpack = address.split("|")
-        retstring = ''
-        for addr in addpack:
-            retstring += "['"+addr+"']" + "['replies']"
+    def fetch_messages(self, response):
+        if (response.method == "POST"):
+            data =  json.loads(response.body.decode('utf-8'))
 
-        return retstring
+            user_code = response.session['user_data']['user_code']
+            box_code = data['box_code']
+            time_range = data.get('time_range')
+            count = data.get('count')
+
+            fetchset = []
+
+            # userset = User.objects.filter(user_code=user_code).values("groups")
+            # ugroups = userset[0]['groups']
+            # ngroups = []
+            # for gp in ugroups:
+                # ngroups.append("__"+gp + "__")
+
+            querypair={
+                "owners__overlap":["__all__", user_code] #Gets where the owners list contains any of the passed
+            }
+
+            qset = Notification.objects.values().filter(**querypair).order_by('-id')
+
+            if (qset.count() == 0):
+                callresponse = {
+                    'passed': False,
+                    'response':201,
+                    'queryset':[]
+                }
+                return HttpResponse(json.dumps(callresponse))
+
+
+            callresponse = {
+                'passed': True,
+                'response':200,
+                'queryset':[*qset]
+            }
+            return  HttpResponse(json.dumps(callresponse))
+
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
 
 
 class TransactionAPI:
