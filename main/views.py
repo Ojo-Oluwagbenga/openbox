@@ -1,6 +1,11 @@
 from django.shortcuts import render
 from django.shortcuts import redirect
 
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+import os
+
+
 # Create your views here.
 
 def only_logged_outs(v_method):
@@ -54,3 +59,24 @@ def report(response, report_code):
 def logout(response):
     response.session.flush()
     return redirect("/login")
+
+def bluetest(response):
+    return render(response, "bluetest.html", {})
+
+# @csrf_exempt  # For development only; use CSRF tokens in production
+def upload_document(request):
+    if request.method == 'POST' and request.FILES.get('document'):
+        uploaded_file = request.FILES['document']
+        upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploaded')
+        os.makedirs(upload_dir, exist_ok=True)  # ✅ Create the directory if missing
+
+        file_path = os.path.join(upload_dir, uploaded_file.name)
+
+        with open(file_path, 'wb+') as dest:
+            for chunk in uploaded_file.chunks():
+                dest.write(chunk)
+        # with open(f'media/uploaded/{uploaded_file.name}', 'wb+') as destination:
+        #     for chunk in uploaded_file.chunks():
+        #         destination.write(chunk)
+        return JsonResponse({'message': 'Upload successful'})
+    return JsonResponse({'error': 'Invalid request'}, status=400)

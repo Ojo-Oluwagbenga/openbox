@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>File Upload Test</title>
+</head>
+<body>
+  <h2>Upload a Document</h2>
+  <form id="uploadForm">
+    <input type="file" name="document" id="document" required>
+    <button type="submit">Upload</button>
+  </form>
+
+  <progress id="progressBar" value="0" max="100" style="width: 100%; display: none;"></progress>
+  <p id="status"></p>
+
+  <script>
+    const form = document.getElementById('uploadForm');
+    const progressBar = document.getElementById('progressBar');
+    const statusText = document.getElementById('status');
+
+    form.addEventListener('submit', function(event) {
+      event.preventDefault();
+
+      const fileInput = document.getElementById('document');
+      const file = fileInput.files[0];
+      const formData = new FormData();
+      formData.append('document', file);
+
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', 'http://localhost:8000/api/user/add_document', true); // change URL if needed
+
+      xhr.upload.addEventListener('progress', function(e) {
+        if (e.lengthComputable) {
+          const percent = (e.loaded / e.total) * 100;
+          progressBar.style.display = 'block';
+          progressBar.value = percent;
+          statusText.textContent = `Uploading: ${percent.toFixed(2)}%`;
+        }
+      });
+
+      xhr.onload = function () {
+        if (xhr.status === 200) {
+          statusText.textContent = 'Upload successful!';
+        } else {
+          statusText.textContent = 'Upload failed.';
+        }
+      };
+
+      xhr.onerror = function () {
+        statusText.textContent = 'Error uploading file.';
+      };
+
+      xhr.send(formData);
+    });
+  </script>
+</body>
+</html>

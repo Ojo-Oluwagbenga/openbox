@@ -19,6 +19,11 @@ from django.contrib.auth.hashers import check_password
 from django.core.mail import send_mail, EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
+import os
+from django.conf import settings
+
 
 class GeneralAPI:
     def replace_char(_string, ind, newchar):
@@ -549,3 +554,136 @@ class UserAPI(View):
             return HttpResponse(json.dumps(callresponse))
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    def getbalance(self, response):
+        if (response.method == "POST"):
+            callresponse = {
+                'passed': False,
+                'response':{},
+                'error':{}
+            }
+            user_code = response.session['user_data']['user_code']
+
+            #CHECK USER'S VALIDIDTY
+            user = User.objects.filter(user_code=user_code)
+            if (not user):
+                return HttpResponse(json.dumps(callresponse))
+            
+            u_data = user[0]
+            callresponse['response'] = {
+                "cash_balance":u_data.cashbalance
+            }
+            callresponse['passed'] = True
+            return HttpResponse(json.dumps(callresponse))
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    @csrf_exempt
+    def add_document(self, response):
+        if response.method == 'POST' and response.FILES.get('document'):
+            uploaded_file = response.FILES['document']
+            upload_dir = os.path.join(settings.MEDIA_ROOT, 'uploaded')
+            os.makedirs(upload_dir, exist_ok=True)  # ✅ Create the directory if missing
+
+            file_path = os.path.join(upload_dir, uploaded_file.name)
+
+            with open(file_path, 'wb+') as dest:
+                for chunk in uploaded_file.chunks():
+                    dest.write(chunk)
+            return JsonResponse({'message': 'Upload successful'})
+        return JsonResponse({'error': 'Invalid request'}, status=400)
+
+
+    
+class BoxAPI(View):
+    def create(self, response):
+        if (response.method == "POST"):
+            data =  json.loads(response.body.decode('utf-8'))
+            callresponse = {
+                'passed': False,
+                'response':data,
+                'error':{}
+            }
+            data['box_code'] = 'dummy'
+            data['create_time'] = int(time.time())
+
+            box_sl = ModelSL(data={**data}, model=Box, extraverify={}) 
+            box_sl.is_valid() # MUST BE CALLED TO PROCEED
+            ins_id = box_sl.save().__dict__['id']
+            box_code = numberEncode(ins_id, 10)
+            box_sl.validated_data['box_code'] = box_code
+            box_sl.save()
+            
+            callresponse = {
+                'passed': True,
+                'error':{},
+            }
+            return HttpResponse(json.dumps(callresponse))
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    def find_box_by_state(self, response):
+        if (response.method == "POST"):
+            data =  json.loads(response.body.decode('utf-8'))
+            callresponse = {
+                'passed': False,
+                'response':{},
+                'error':{}
+            }
+            
+            boxes = Box.objects.filter(state=data['state'])
+            if (not boxes):
+                callresponse['response'] = "Boxes not found in this location"
+                return HttpResponse(json.dumps(callresponse))
+            
+            retboxes = []
+            for box in boxes:
+                ret = {}
+                if (data.get("columns")):
+                    for column in data['columns']:
+                        ret[column] = box[column]
+                else:
+                    ret['name'] = box.name
+                    ret['address'] = box.address
+                    ret['description'] = box.description
+
+                retboxes.append(ret)
+                
+
+            callresponse['passed'] = True
+            callresponse['response'] = {
+                "boxes":retboxes
+            }
+            return HttpResponse(json.dumps(callresponse))
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+
+
+class Box_chatAPI(View):
+    def create(self, response):
+        if (response.method == "POST"):
+            data =  json.loads(response.body.decode('utf-8'))
+            callresponse = {
+                'passed': False,
+                'response':data,
+                'error':{}
+            }
+            data['chat_code'] = 'dummy'
+
+            chat_sl = ModelSL(data={**data}, model=Box_chat, extraverify={}) 
+            chat_sl.is_valid() # MUST BE CALLED TO PROCEED
+            ins_id = chat_sl.save().__dict__['id']
+            chat_code = numberEncode(ins_id, 10)
+            chat_sl.validated_data['chat_code'] = chat_code
+            chat_sl.save()
+
+            
+            callresponse = {
+                'passed': True,
+                'error':{},
+            }
+            return HttpResponse(json.dumps(callresponse))
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
