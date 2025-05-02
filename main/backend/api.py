@@ -739,7 +739,6 @@ class UserAPI(View):
             return HttpResponse(json.dumps(callresponse))
         return JsonResponse({'error': 'Invalid request'}, status=400)
 
-
     
 class BoxAPI(View):
     def create(self, response):
@@ -804,8 +803,6 @@ class BoxAPI(View):
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
 
-
-
 class Box_messagesAPI(View):
     def add_message(self, response):
         if (response.method == "POST"):
@@ -851,42 +848,39 @@ class Box_messagesAPI(View):
 
             user_code = response.session['user_data']['user_code']
             box_code = data['box_code']
-            time_range = data.get('time_range')
-            count = data.get('count')
-
-            fetchset = []
-
-            # userset = User.objects.filter(user_code=user_code).values("groups")
-            # ugroups = userset[0]['groups']
-            # ngroups = []
-            # for gp in ugroups:
-                # ngroups.append("__"+gp + "__")
-
-            querypair={
-                "owners__overlap":["__all__", user_code] #Gets where the owners list contains any of the passed
+            time_range = data.get('time_range') # [timestart, timeend]
+            count = int (data.get('count', 10))
+            
+            searchquery = {
+                "user_code": user_code,
+                "box_code": box_code,
             }
 
-            qset = Notification.objects.values().filter(**querypair).order_by('-id')
+            # Check if time_range is provided (it should be a tuple or list of 2 values: start time, end time)
+            if time_range:
+                searchquery['time__range'] = (time_range[0], time_range[1])
+                
+            # Query the database with the searchquery dictionary
+            messages = Box_message.objects.filter(**searchquery).order_by('time')
 
-            if (qset.count() == 0):
-                callresponse = {
-                    'passed': False,
-                    'response':201,
-                    'queryset':[]
-                }
-                return HttpResponse(json.dumps(callresponse))
+            # Limit the number of messages if `count` is provided
+            if count:
+                messages = messages[:count]
 
-
+            # Prepare the response
             callresponse = {
                 'passed': True,
-                'response':200,
-                'queryset':[*qset]
+                'response': 200,
+                'queryset': list(messages.values())  # Convert QuerySet to a list of dictionaries
             }
-            return  HttpResponse(json.dumps(callresponse))
+
+            return HttpResponse(
+                json.dumps(callresponse),
+                content_type="application/json"
+            )
 
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
-
 
 class TransactionAPI:
     model = Transaction
