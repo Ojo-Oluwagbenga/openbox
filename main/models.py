@@ -43,6 +43,7 @@ class Box(models.Model):
     box_type = models.CharField(max_length=100) 
     create_time = models.CharField(default=0, max_length=100)
     admins = ArrayField(models.CharField(max_length=100), blank=True)
+    price_per_printpage = models.CharField(default=0, max_length=100)
     pigeonholes = ArrayField(models.CharField(max_length=100), blank=True)
 
     #TO FIND THE BOX
@@ -59,6 +60,7 @@ class Pigeonhole(models.Model):
     pg_code = models.CharField(max_length=100) #THIS IS ABSOLUTE IDENTIFIER ON THE SYSTEM
     status = models.CharField(max_length=100) #1 FOR BUSY AND 0 FOR AVAILABLE
     create_time = models.CharField(default=0, max_length=100)
+    price_per_hr = models.CharField(default=0, max_length=100)
 
 class Box_chat(models.Model):
     chat_code = models.CharField(max_length=100) 
@@ -85,7 +87,7 @@ class PayTransact(models.Model):
     item_code = models.CharField(max_length=100, default="-")#This is the code of the item user are paying for
 
 #This holds all major transactions
-class Transactions(models.Model):
+class Transaction(models.Model):
     transact_code = models.CharField(max_length=50)
     payer_code = models.CharField(max_length=50)
     type = models.CharField(max_length=50) #out for withdrawal, in for payment
@@ -94,3 +96,25 @@ class Transactions(models.Model):
     amount = models.FloatField()
     date = models.CharField(max_length=200)
     data = models.JSONField(null=True) #This contains other important data to this like withdrawal data
+
+
+class Task(models.Model):
+    task_code = models.CharField(max_length=50)
+    task_type = models.CharField(max_length=50) #COULD BE printing, storage, movement
+    access_code = models.CharField(max_length=50) #CURRENT BOX ACCESS DIGIT FOR THIS TASK
+    box_code = models.CharField(max_length=50) #THE CURRENT BOX PERFORMNG THIS TASK
+    pg_code = models.CharField(max_length=50) #THE CURRENT SPECIFIC PG HOLE 
+    status = models.CharField(max_length=50, default="waiting") #COULD BE waiting, active, completed, terminated
+    time_in = models.CharField(max_length=50) 
+    time_start = models.CharField(max_length=50) 
+    time_completed = models.CharField(max_length=50) 
+    time_terminated = models.CharField(max_length=50) 
+    package_data = models.JSONField(null=True) 
+    '''
+        {
+            package_type:"print_doc", "user_package",
+            document_source_url:'https://kkk/ups/jk.jpg'
+            package_weight:"",
+            task_history:[task_code1, task2] //THIS IS FOR CASES WHEN IT IS MOVED OR SO.
+        }
+    '''
