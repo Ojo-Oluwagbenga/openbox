@@ -52,11 +52,16 @@ class Pigeonhole(models.Model):
     create_time = models.CharField(default=0, max_length=100)
     price_per_hr = models.CharField(default=0, max_length=100)
 
-class Box_chat(models.Model):
-    chat_code = models.CharField(max_length=100) 
+class Box_message(models.Model):
+    message_code = models.CharField(max_length=100) 
     user_code = models.CharField(max_length=100)
     box_code = models.CharField(max_length=100) 
-    message_record = models.JSONField(null=True)
+    message_side = models.CharField(max_length=50) # user or computer
+    message_type = models.CharField(max_length=50) # different keys should be used here for different display
+    text = models.CharField(max_length=600) 
+    document_url = models.CharField(max_length=100) 
+    time = models.CharField(max_length=100) 
+    otherdata = models.JSONField(null=True)
 
 
 class Notification(models.Model):

@@ -806,32 +806,53 @@ class BoxAPI(View):
 
 
 
-class Box_chatAPI(View):
-    def create(self, response):
+class Box_messagesAPI(View):
+    def add_message(self, response):
         if (response.method == "POST"):
             data =  json.loads(response.body.decode('utf-8'))
             callresponse = {
-                'passed': False,
-                'response':data,
-                'error':{}
+                'passed': True,
+                'response':200,
+                'comment_code':"comment_code",
             }
-            data['chat_code'] = 'dummy'
 
-            chat_sl = ModelSL(data={**data}, model=Box_chat, extraverify={}) 
-            chat_sl.is_valid() # MUST BE CALLED TO PROCEED
-            ins_id = chat_sl.save().__dict__['id']
-            chat_code = numberEncode(ins_id, 10)
-            chat_sl.validated_data['chat_code'] = chat_code
-            chat_sl.save()
+            create_data = {}
+            user_code = response.session['user_data']['user_code']
+            box_code = data['box_code']
+            message_code = user_code + box_code + str (time.time())
 
-            
+            create_data['user_code'] = user_code
+            create_data['box_code'] = box_code
+            create_data['message_code'] = message_code
+            create_data['message_side'] = 'user'
+            create_data['message_type'] = data.get('message_type')
+            create_data['text'] = data['text']
+            create_data['document_url'] = data.get('document_url')
+            create_data['time'] = time.time()
+
+            box_sl = ModelSL(data={**create_data}, model=Box_message, extraverify={}) 
+            box_sl.is_valid() # MUST BE CALLED TO PROCEED
+            box_sl.save()
+                       
             callresponse = {
                 'passed': True,
-                'error':{},
+                'response':200,
+                'message_code':message_code,
             }
+
             return HttpResponse(json.dumps(callresponse))
+
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    def buildstring(address):
+        addpack = address.split("|")
+        retstring = ''
+        for addr in addpack:
+            retstring += "['"+addr+"']" + "['replies']"
+
+        return retstring
+
 
 class TransactionAPI:
     model = Transaction
@@ -1491,19 +1512,19 @@ class NotificationAPI:
             data =  json.loads(response.body.decode('utf-8'))
 
             user_code = response.session['user_data']['user_code']
-            class_code = response.session['user_data'].get('class_code', '-')
+            # class_code = response.session['user_data'].get('class_code', '-')
 
             fetchset = []
 
             user_code = response.session['user_data']['user_code']
-            userset = User.objects.filter(user_code=user_code).values("groups")
-            ugroups = userset[0]['groups']
-            ngroups = []
-            for gp in ugroups:
-                ngroups.append("__"+gp + "__")
+            # userset = User.objects.filter(user_code=user_code).values("groups")
+            # ugroups = userset[0]['groups']
+            # ngroups = []
+            # for gp in ugroups:
+                # ngroups.append("__"+gp + "__")
 
             querypair={
-                "owners__overlap":["__all__", "__"+class_code+"__", user_code, *ngroups] #Gets where the owners list contains any of the passed
+                "owners__overlap":["__all__", user_code] #Gets where the owners list contains any of the passed
             }
 
             qset = Notification.objects.values().filter(**querypair).order_by('-id')
