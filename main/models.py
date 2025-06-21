@@ -48,13 +48,22 @@ class Pigeonhole(models.Model):
     box_code = models.CharField(max_length=100) #CODE OF THE BOX IT IS CONTAINED
     box_id = models.CharField(max_length=100) #THIS IS THE SIMPLE IDENTIFIER WRITTEN ON THE BOX
     pg_code = models.CharField(max_length=100) #THIS IS ABSOLUTE IDENTIFIER ON THE SYSTEM
-    status = models.CharField(max_length=100) #1 FOR BUSY AND 0 FOR AVAILABLE
-    time = models.BigIntegerField(default=lambda: int(time.time()))
+    status = models.CharField(max_length=100) #1 FOR BUSY AND 0 FOR AVAILABLE    
+    time = models.BigIntegerField(default=lambda: int(time.time())) #ESTIMATED TIME OF USE
     price_per_hr = models.CharField(default=0, max_length=100)
+    default_use = models.CharField(max_length=100) #print_hole or drop_hole
+    dimension = models.JSONField(null=True) 
+    '''
+        {
+            height:"",
+            width:''
+            length:"",
+        }
+    '''
 
 class Task(models.Model):
     task_code = models.CharField(max_length=50)
-    task_type = models.CharField(max_length=50) #COULD BE printing, storage, movement
+    task_type = models.CharField(max_length=50) #COULD BE print, storage, movement
     access_code = models.CharField(max_length=50) #CURRENT BOX ACCESS DIGIT FOR THIS TASK
     box_code = models.CharField(max_length=50) #THE CURRENT BOX PERFORMNG THIS TASK
     pg_code = models.CharField(max_length=50) #THE CURRENT SPECIFIC PG HOLE 

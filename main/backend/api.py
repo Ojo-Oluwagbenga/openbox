@@ -739,6 +739,30 @@ class UserAPI(View):
             return HttpResponse(json.dumps(callresponse))
         return JsonResponse({'error': 'Invalid request'}, status=400)
 
+    def get_recent_tasks(self, response):
+        if (response.method == "POST"):
+            callresponse = {
+                'passed': False,
+                'response':{},
+                'error':{}
+            }
+            user_code = response.session['user_data']['user_code']
+
+            #CHECK USER'S VALIDIDTY
+            user = User.objects.filter(user_code=user_code)
+            if (not user):
+                return HttpResponse(json.dumps(callresponse))
+            
+            u_data = user[0]
+            callresponse['response'] = {
+                "cash_balance":u_data.cashbalance
+            }
+            callresponse['passed'] = True
+            return HttpResponse(json.dumps(callresponse))
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+
     
 class BoxAPI(View):
     def create(self, response):
@@ -803,15 +827,17 @@ class BoxAPI(View):
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
 
-class Box_messagesAPI(View):
     def add_message(self, response):
         if (response.method == "POST"):
             data =  json.loads(response.body.decode('utf-8'))
             callresponse = {
-                'passed': True,
-                'response':200,
+                'passed': False,
+                'response':400,
                 'comment_code':"comment_code",
             }
+            task_code = "" #IN CASE A MESSAGE COMES IN FORM OF TASK REQUEST
+            response = '',
+            response_data = {}
 
             create_data = {}
             user_code = response.session['user_data']['user_code']
@@ -821,11 +847,93 @@ class Box_messagesAPI(View):
             create_data['user_code'] = user_code
             create_data['box_code'] = box_code
             create_data['message_code'] = message_code
-            create_data['message_side'] = 'user'
+            create_data['message_side'] = data.get('message_type')
             create_data['message_type'] = data.get('message_type')
             create_data['text'] = data['text']
             create_data['document_url'] = data.get('document_url')
             create_data['time'] = time.time()
+
+            if (data.get('message_type') == 'upload_print_document'):
+                #COLLECT THE FILE DATA AND SAVE IT IN 
+                output_dir = os.path.join(settings.BASE_DIR, 'static', 'uploads/user_id/box_id/time/')
+                os.makedirs(output_dir, exist_ok=True)
+                output_path = os.path.join(output_dir, 'filename.ext')
+                response = "The total cost of the printing is 20million"
+            
+            if (data.get('message_type') == 'print'):
+                #BILL THE USER BEFORE INITIATING TASK 
+
+                #START A PRINTING TASK                
+                pg_hole_code = "find_the_free_hole"
+                access_code = "access_code"
+                task_data = {
+                    "task_code": 'dummy',
+                    "task_type" : "print", #COULD BE print, storage, movement
+                    "access_code": access_code, #GENERATE A RANDOM 4-DIGIT CODE
+                    "box_code": box_code, #THE CURRENT BOX PERFORMNG THIS TASK
+                    "pg_code": pg_hole_code, #THE CURRENT SPECIFIC PG HOLE 
+                    "package_data": {
+                        "package_type":"print_doc",
+                        "document_source_url":data.get('document_url'),
+                        "package_weight":"estimate_with_print_pages",
+                        'task_history':["dummy"]
+                    }
+                }
+                task_sl = ModelSL(data={**task_data}, model=Task, extraverify={}) 
+                task_sl.is_valid() # MUST BE CALLED TO PROCEED
+                ins_id = task_sl.save().__dict__['id']
+                task_code = numberEncode(ins_id, 10)
+                task_sl.validated_data['task_code'] = task_code
+                task_sl.validated_data['package_data']['task_history'][0] = task_code
+                task_sl.save()
+
+                #UPDATE THE HOLE TO BUSY
+
+                #NOTIFY THE BOX OF A PRINTING BY UPDATING BOX FIREBASE ENTRY
+                #tasks/box_id/task_code:"print",task_code2:"print"
+
+                response = "Your printing has started, your package is stashed for printing"
+                response_data = {
+                    'task_code':task_code,
+                    'pg_hole_code':pg_hole_code,
+                    'access_code':access_code
+                }
+
+            if (data.get('message_type') == 'store_package'):
+                #BILL THE USER BEFORE INITIATING TASK 
+
+
+                #START A STORAGE TASK                
+                pg_hole_code = "find_the_free_hole"
+                access_code = "access_code"
+                task_data = {
+                    "task_code": 'dummy',
+                    "task_type" : "storage", #COULD BE print, storage, movement
+                    "access_code": access_code, #GENERATE A RANDOM 4-DIGIT CODE
+                    "box_code": box_code, #THE CURRENT BOX PERFORMNG THIS TASK
+                    "pg_code": pg_hole_code, #THE CURRENT SPECIFIC PG HOLE 
+                    "package_data": {
+                        "package_type":"user_package",
+                        "package_weight":"user_pack_weight",
+                        'task_history':["dummy"],
+                        'holding_duration':data.get('duration')
+                    }
+                }
+                task_sl = ModelSL(data={**task_data}, model=Task, extraverify={}) 
+                task_sl.is_valid() # MUST BE CALLED TO PROCEED
+                ins_id = task_sl.save().__dict__['id']
+                task_code = numberEncode(ins_id, 10)
+                task_sl.validated_data['task_code'] = task_code
+                task_sl.validated_data['package_data']['task_history'][0] = task_code
+                task_sl.save()
+
+                response = "The space is ready for use"
+                response_data = {
+                    'task_code':task_code,
+                    'pg_hole_code':pg_hole_code,
+                    'access_code':access_code
+                }
+
 
             box_sl = ModelSL(data={**create_data}, model=Box_message, extraverify={}) 
             box_sl.is_valid() # MUST BE CALLED TO PROCEED
@@ -835,6 +943,8 @@ class Box_messagesAPI(View):
                 'passed': True,
                 'response':200,
                 'message_code':message_code,
+                'response':response,
+                'response_data':response_data,
             }
 
             return HttpResponse(json.dumps(callresponse))
@@ -881,6 +991,7 @@ class Box_messagesAPI(View):
 
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
 
 class TransactionAPI:
     model = Transaction
