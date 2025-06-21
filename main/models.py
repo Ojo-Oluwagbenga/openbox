@@ -2,6 +2,9 @@ from django.db import models
 from django.contrib.postgres.fields import ArrayField
 import time
 
+def current_unix_time():
+    return int(time.time())
+
 # Create your models here.
 class User(models.Model):
     name = models.CharField(max_length=100)
@@ -66,9 +69,10 @@ class Task(models.Model):
     task_type = models.CharField(max_length=50) #COULD BE print, storage, movement
     access_code = models.CharField(max_length=50) #CURRENT BOX ACCESS DIGIT FOR THIS TASK
     box_code = models.CharField(max_length=50) #THE CURRENT BOX PERFORMNG THIS TASK
+    user_code = models.CharField(max_length=50) #THE USER OWNING THIS TASK
     pg_code = models.CharField(max_length=50) #THE CURRENT SPECIFIC PG HOLE 
     status = models.CharField(max_length=50, default="waiting") #COULD BE waiting, active, completed, terminated
-    time_in = models.BigIntegerField(default=lambda: int(time.time())) 
+    time_in = models.BigIntegerField(default=current_unix_time) 
     time_start = models.BigIntegerField(default=0) 
     time_completed = models.BigIntegerField(default=0) 
     time_terminated = models.BigIntegerField(default=0) 
@@ -77,6 +81,8 @@ class Task(models.Model):
         {
             package_type:"print_doc", "user_package",
             document_source_url:'https://kkk/ups/jk.jpg'
+            holding_duration:"",
+            holding_start:"",
             package_weight:"",
             task_history:[task_code1, task2] //THIS IS FOR CASES WHEN IT IS MOVED OR SO.
         }

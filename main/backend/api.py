@@ -743,21 +743,35 @@ class UserAPI(View):
         if (response.method == "POST"):
             callresponse = {
                 'passed': False,
-                'response':{},
                 'error':{}
             }
             user_code = response.session['user_data']['user_code']
 
             #CHECK USER'S VALIDIDTY
-            user = User.objects.filter(user_code=user_code)
-            if (not user):
+            _recent_tasks = Task.objects.filter(user_code=user_code).order_by('-time_in')[:4]
+            if (not _recent_tasks):
+                callresponse['passed'] = True
+                callresponse['recent_tasks'] = []
                 return HttpResponse(json.dumps(callresponse))
             
-            u_data = user[0]
-            callresponse['response'] = {
-                "cash_balance":u_data.cashbalance
-            }
-            callresponse['passed'] = True
+            recent_tasks = []
+            for task in _recent_tasks:
+                pub_task = {
+                    "task_code":task.task_code,
+                    "package_data":task.package_data,
+                    "task_type":task.task_type,
+                    "status":task.status,
+                }
+                box = Box.objects.filter(box_code=task.box_code)[0]
+                pub_task['box'] = {
+                    "name":box.name,
+                    "description":box.description,
+                    "address":box.address,
+                }
+                recent_tasks.append(pub_task)
+
+            callresponse['passed'] = True 
+            callresponse['recent_tasks'] = recent_tasks
             return HttpResponse(json.dumps(callresponse))
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
