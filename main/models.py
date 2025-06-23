@@ -36,8 +36,36 @@ class Box(models.Model):
     box_type = models.CharField(max_length=100) 
     create_time = models.CharField(default=0, max_length=100)
     admins = ArrayField(models.CharField(max_length=100), blank=True)
-    price_per_printpage = models.CharField(default=0, max_length=100)
-    pigeonholes = ArrayField(models.CharField(max_length=100), blank=True)
+    storage_price_data = ArrayField(models.JSONField(null=True) , blank=True)
+    '''
+        "6hrs":20,
+        "1day":30,
+        "3days":70,
+        "1week":90,
+        "2weeks":90,
+        "1month":90,
+        "3months":90,
+        "6months":90,
+    '''
+    price_per_printpage = models.FloatField(default=0)
+    pigeonholes = ArrayField(models.JSONField(null=True) , blank=True)
+
+    '''
+        [
+            {
+                identifier:"IDF", #THIS IS THE SIMPLE IDENTIFIER WRITTEN ON THE BOX
+                status:"",
+                time:"", //ESTIMATED TIME OF USE
+                price_per_hr:"",
+                default_use:"", #print_hole or drop_hole
+                dimension: {
+                    height:"",
+                    width:''
+                    length:"",
+                },
+            },
+        ]
+    '''
 
     #TO FIND THE BOX
     state = models.CharField(default="", max_length=100)
@@ -52,7 +80,7 @@ class Pigeonhole(models.Model):
     box_id = models.CharField(max_length=100) #THIS IS THE SIMPLE IDENTIFIER WRITTEN ON THE BOX
     pg_code = models.CharField(max_length=100) #THIS IS ABSOLUTE IDENTIFIER ON THE SYSTEM
     status = models.CharField(max_length=100) #1 FOR BUSY AND 0 FOR AVAILABLE    
-    time = models.BigIntegerField(default=lambda: int(time.time())) #ESTIMATED TIME OF USE
+    time = models.BigIntegerField(default=current_unix_time) #ESTIMATED TIME OF USE
     price_per_hr = models.CharField(default=0, max_length=100)
     default_use = models.CharField(max_length=100) #print_hole or drop_hole
     dimension = models.JSONField(null=True) 
@@ -70,7 +98,7 @@ class Task(models.Model):
     access_code = models.CharField(max_length=50) #CURRENT BOX ACCESS DIGIT FOR THIS TASK
     box_code = models.CharField(max_length=50) #THE CURRENT BOX PERFORMNG THIS TASK
     user_code = models.CharField(max_length=50) #THE USER OWNING THIS TASK
-    pg_code = models.CharField(max_length=50) #THE CURRENT SPECIFIC PG HOLE 
+    pg_id = models.CharField(max_length=50) #THE SIMPLE IDENTIFIER CURRENT SPECIFIC PG HOLE ON THE SELECTED BOX 
     status = models.CharField(max_length=50, default="waiting") #COULD BE waiting, active, completed, terminated
     time_in = models.BigIntegerField(default=current_unix_time) 
     time_start = models.BigIntegerField(default=0) 
@@ -90,13 +118,14 @@ class Task(models.Model):
 
 class Box_message(models.Model):
     message_code = models.CharField(max_length=100) 
+    chat_code = models.CharField(max_length=100) #THIS IS CAN BE ext-boxcode(print-boxcode, drop-boxcode) 
     user_code = models.CharField(max_length=100)
     box_code = models.CharField(max_length=100) 
     message_side = models.CharField(max_length=50) # user or computer
     message_type = models.CharField(max_length=50) # different keys should be used here for different display
     text = models.CharField(max_length=600) 
     document_url = models.CharField(max_length=100) 
-    time = models.BigIntegerField(default=lambda: int(time.time()))
+    time = models.BigIntegerField(default=current_unix_time)
     otherdata = models.JSONField(null=True)
 
 
@@ -104,7 +133,7 @@ class Notification(models.Model):
     noti_code = models.CharField(max_length=50)
     callback_url = models.CharField(max_length=200)
     text = models.CharField(max_length=200)
-    time = models.BigIntegerField(default=lambda: int(time.time()))
+    time = models.BigIntegerField(default=current_unix_time)
     category = models.CharField(max_length=50)
     owners = ArrayField(models.CharField(max_length=50))
     otherdata = models.JSONField(null=True)
@@ -121,11 +150,19 @@ class PayTransact(models.Model):
 class Transaction(models.Model):
     transact_code = models.CharField(max_length=50)
     payer_code = models.CharField(max_length=50)
+    description = models.CharField(max_length=300)
     type = models.CharField(max_length=50) #out for withdrawal, in for payment
     item_code = models.CharField(max_length=50) #WALLLET, BOX PAYMENT
-    balance_to_date = models.FloatField() #This is only added on payment received
+    system_balance_to_date = models.FloatField() #This is only added on payment received
+    user_balance_to_date = models.FloatField() #This is only added on payment received
     amount = models.FloatField()
-    time = models.BigIntegerField(default=lambda: int(time.time()))
+    time = models.BigIntegerField(default=current_unix_time)
     data = models.JSONField(null=True) #This contains other important data to this like withdrawal data
 
+class Uploads_reference(models.Model):
+    path = models.CharField(max_length=100) #CODE OF THE BOX IT IS CONTAINED
+    time = models.FloatField(default=0) #THIS IS THE SIMPLE IDENTIFIER WRITTEN ON THE BOX
+    user = models.CharField(max_length=100) 
+    user_upload_count = models.IntegerField(default=0) 
+    user_upload_sum_size = models.FloatField(default=0)
 

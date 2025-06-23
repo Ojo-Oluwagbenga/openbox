@@ -11,6 +11,7 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from django.db.models import Q
+import random
 
 
 
@@ -25,6 +26,13 @@ from django.conf import settings
 from django.shortcuts import render
 from django.http import HttpResponse
 from django.views import View
+
+import google.auth.transport.requests
+from google.oauth2 import service_account
+from firebase_admin import messaging, db
+from firebase_admin import credentials
+import firebase_admin
+
 
 class GeneralAPI:
     def replace_char(_string, ind, newchar):
@@ -440,7 +448,6 @@ class APIgenerals:
             callresponse = sl.cError()
             return callresponse
 
-
     def get_model_data(**kwargs):
         model = kwargs['model']
         searches = kwargs['searches']
@@ -508,6 +515,350 @@ class APIgenerals:
     def checkmail(mail):
         pat = r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,7}\b'
         return re.match(pat,mail)
+
+class FcmAPI:
+    PROJECT_ID = 'oneklass-v2'
+    BASE_URL = 'https://fcm.googleapis.com'
+    FCM_ENDPOINT = 'v1/projects/' + PROJECT_ID + '/messages:send'
+    FCM_URL = BASE_URL + '/' + FCM_ENDPOINT
+    SCOPES = ['https://www.googleapis.com/auth/firebase.messaging']
+
+    def _get_access_token():
+        credentials = service_account.Credentials.from_service_account_file(
+            'service_account.json', scopes=FcmAPI.SCOPES)
+        request = google.auth.transport.requests.Request()
+
+        credentials.refresh(request)
+        return credentials.token
+    
+    def get_firedb_data(address):
+        # Initialize the app with a service account, granting admin privileges
+        try:
+            cred = credentials.Certificate('service_account.json')
+            firebase_admin.initialize_app(cred, {
+                'databaseURL': "https://oneklass-v2-default-rtdb.firebaseio.com"
+            })
+        except Exception as e:
+            pass
+
+        # Reference to your Firebase database
+        ref = db.reference(address)
+
+        # Fetching data from the database
+        snapshot = ref.get()
+
+        # RETURN the retrieved data
+        return [ref, snapshot]
+
+    def unsubscribe_from_topic(reg_tokens, topic):
+        if not firebase_admin._apps:
+            cred = credentials.Certificate('service_account.json') 
+            firebase_admin.initialize_app(cred)
+        messaging.unsubscribe_from_topic(reg_tokens, topic)
+        
+    def subscribe_to_topic(reg_tokens, topic):
+        if not firebase_admin._apps:
+            cred = credentials.Certificate('service_account.json') 
+            firebase_admin.initialize_app(cred)
+        messaging.subscribe_to_topic(reg_tokens, topic)
+
+    def send_notification(packet):
+        '''
+            packet:[
+                {
+                    "user_code":ucode,
+                    "registration_token":reg_token,
+                    "title":the_title,
+                    "body":the_body,
+                }
+            ]
+        '''
+
+        headers = {
+            'Authorization': 'Bearer ' + FcmAPI._get_access_token(),
+            'Content-Type': 'application/json; UTF-8',
+        }
+        resp = None
+        for pck in packet:
+            fcm_message = {
+                'message': {
+                    'token':pck['registration_token'],
+                    'notification': {
+                        'title': pck['title'],
+                        'body': pck['body'],
+                    },
+                    "android": {
+                        "notification": {
+                            "sound": "default"
+                        }
+                    },
+                }
+            }
+            resp = requests.post(FcmAPI.FCM_URL, data=json.dumps(fcm_message), headers=headers)
+           
+        return resp
+
+    def send_topic_notification(data):
+        '''
+        data = {
+            topic:"",
+            title:"",
+            body:"",
+        }
+        '''
+        # response = FcmAPI.subscribe_to_topic(registration_tokens, "topic") == USER MUST BE SUBSCRIBED LIKE THIS
+        headers = {
+            'Authorization': 'Bearer ' + FcmAPI._get_access_token(),
+            'Content-Type': 'application/json; UTF-8',
+        }
+        fcm_message = {
+            "message": {
+                "topic": data["topic"],
+                "notification": {
+                    "title":data['title'],
+                    "body":data['body']
+                },
+                "webpush": {
+                    "fcm_options": {
+                        "link": "https://oneklass.oauife.edu.ng"
+                    }
+                }
+            }
+        }
+        resp = requests.post(FcmAPI.FCM_URL, data=json.dumps(fcm_message), headers=headers)
+        return resp
+    
+    #THE FUNCTIONS BELOW WILL MANAGE THE AUTO ATTENDANCE AS REQUEST IS SENT TO THEM
+    
+    #THIS WILL HANDLE BOTH THE PRE AND POST NOTIFICATION FOR ATTENDANCE
+    @csrf_exempt
+    def openManager(response, apimethod): 
+        if (response.method == "POST"):
+            data =  json.loads(response.body.decode('utf-8'))
+
+            #TO ENSURE NOT JUST ANYONE WITH THE LINK CAN START QUIUING NOTIFICATION 
+            if (data.get("secret_code") != 'my_secret_code'):
+                callresponse = {
+                    'passed': False,
+                    'Message':"Invalid Access"
+                }
+                return  HttpResponse(json.dumps(callresponse))
+            
+            return getattr(FcmAPI, apimethod)(response)
+
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    def attendance_notify(response): 
+        if (response.method == "POST"):
+            data =  json.loads(response.body.decode('utf-8'))
+            data = data['needed_data']
+            attendance_code = data.get("attd_code")
+
+            if (data.get('type') == 'pre'):
+                attds = Attendance.objects.filter(attendance_code=attendance_code)
+                if (attds):
+                    attd = attds[0]
+                    users = attd.users 
+
+                    #SEND ALL THE ADMINS OPENING NOTIFICATION
+                    users_data = User.objects.filter(user_code__in=attd.admins).values("user_code","name",'notification_key')
+                    messagePacket = []
+                    title = attd.course_code +': Attendance in 10mins'
+                    sub_body = attd.course_name+"'s attendance is set to be up in 10mins. Click on the activate to start when it's time"
+                    for usr in users_data:
+                        if (usr['notification_key'] != 'nil'):
+                            messagePacket.append({
+                                "user_code":usr['user_code'],
+                                "registration_token":usr['notification_key'],
+                                "title":title,
+                                "body":"Hi " + usr['name'].split(" ")[0] + ", your " + sub_body,
+                            })
+                    FcmAPI.send_notification(messagePacket)
+
+                    #SEND ALL THE APP USERS NOTIFICATION
+                    users_data = User.objects.filter(user_code__in=users).values("user_code","name",'notification_key')
+                    if users_data.count() > 0:
+                        messagePacket = []
+                        title = attd.course_code +': Attendance in 10mins!'
+                        sub_body = attd.course_name+"'s attendance is set to be up in 10mins"
+                        for usr in users_data:
+                            if (usr['notification_key'] != 'nil'):
+                                messagePacket.append({
+                                    "user_code":usr['user_code'],
+                                    "registration_token":usr['notification_key'],
+                                    "title":title,
+                                    "body":"Hey " + usr['name'].split(" ")[0] + ", " + sub_body,
+                                })             
+                        resp = FcmAPI.send_notification(messagePacket)
+
+
+                #EXTRACT FOR ALL USERS IN THE ATTENDANCE
+                pass
+            if (data.get('type') == 'post'):
+                #EXTRACT FOR ONLY USERS THAT HAVE NOT MARKED
+                attds = Attendance.objects.filter(attendance_code=attendance_code)
+                if (attds):
+                    attd = attds[0]
+                    users = [*attd.users]
+
+                    #FILTER ONLY USERS THAT HAVE NOT MARKED
+                    mark_code = 'marked_users_'+str(attd.attendance_data['mark_index'])
+                    marked_users = list(attd.attendance_data['indices'][mark_code].keys())                                       
+                    users = [i for i in users if i not in marked_users]
+                    
+
+                    #SEND UNMARKED USERS NOTIFICATION
+                    users_data = User.objects.filter(user_code__in=users).values("user_code","name",'notification_key')
+                    if users_data.count() == 0:
+                        pass
+
+                    messagePacket = []
+                    title = attd.course_code +': Closing soon!'
+                    sub_body = "seems you have not marked your presence in the ongoing poll, the record closes soon. Click this pop to proceed marking."
+                    for usr in users_data:
+                        if (usr['notification_key'] != 'nil'):
+                            messagePacket.append({
+                                "user_code":usr['user_code'],
+                                "registration_token":usr['notification_key'],
+                                "title":title,
+                                "body":"Hey " + usr['name'].split(" ")[0] + ", " + sub_body,
+                            })
+                    FcmAPI.send_notification(messagePacket)
+
+            callresponse = {
+                'passed': True,
+                'response':200,
+            }
+            return  HttpResponse(json.dumps(callresponse))
+
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    def attendance_queue_prompt(response): 
+        if (response.method == "POST"):
+            data =  json.loads(response.body.decode('utf-8'))
+            data = data['needed_data']
+            attendance_code = data.get("attd_code")
+            user_code = data.get("user_code") #THE ADMIN THAT CLOSED THE LAST POLL
+
+            
+            #SEND NOTIFICATION TO THE USER TO QUEUE NEW ATTENDANCE
+            attds = Attendance.objects.filter(attendance_code=attendance_code)
+            if (attds):
+                attd = attds[0]
+                
+                users_data = User.objects.filter(user_code=user_code).values("user_code","name",'notification_key')
+                messagePacket = []
+                title = attd.course_code +': Call to queue'
+                sub_body = attd.course_name+"'s attendance. Click to view data and queue for the next class"
+                for usr in users_data:
+                    if (usr['notification_key'] != 'nil'):
+                        messagePacket.append({
+                            "user_code":usr['user_code'],
+                            "registration_token":usr['notification_key'],
+                            "title":title,
+                            "body":"Hi " + usr['name'].split(" ")[0] + ", You just closed " + sub_body,
+                        })
+                FcmAPI.send_notification(messagePacket)
+        
+            callresponse = {
+                'passed': True,
+                'response':200,
+                'queryset':"retset"
+            }
+            return  HttpResponse(json.dumps(callresponse))
+
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    def payments_reminder(response): 
+        if (response.method == "POST"):
+            #SEND THE NECESSARY USERS THEIR PENDING PAYMENTS
+            channels = PaymentChannel.objects.all()
+            unbalanced_users = {}
+            for channel in channels:
+                for user_code in channel.users:
+                    unbalanced = False
+                    if (channel.paydata.get(user_code)):
+                        unbalanced = channel.paydata[user_code]['total_left'] != 0
+                    else:
+                        unbalanced = True
+
+                    if (unbalanced):
+                        if (unbalanced_users.get(user_code)):
+                            unbalanced_users[user_code]['channel_names'].append(channel.name)
+                        else:
+                            unbalanced_users[user_code] = {
+                                'channel_names':[channel.name],
+                            }
+            
+            #FIND THE DEFAULTERS NOTIFICATION KEYS
+            users = list(unbalanced_users.keys())
+            userset = User.objects.filter(user_code__in=users).values("notification_key",'name','user_code')
+            
+            messagePacket = []
+            for usr in userset:
+                udata = unbalanced_users[usr['user_code']]
+                title = 'Pending Payments'
+                sub_body = udata['channel_names'][0] + "'s paychannel still awaits your payment. Click to find channel and pay a part or whole"
+                if len (udata['channel_names']) == 2:
+                    sub_body = udata['channel_names'][0] + " and 1 other paychannel await your payments. Click to find channels and pay a part or whole"
+                
+                if len (udata['channel_names']) > 2:
+                    sub_body = udata['channel_names'][0] + " and " +str(len(udata['channel_names']) - 1)+ " other paychannels await your payments. Click to find channels and pay a part or whole"
+
+                if (usr['notification_key'] != 'nil'):
+                    messagePacket.append({
+                        "user_code":usr['user_code'],
+                        "registration_token":usr['notification_key'],
+                        "title":title,
+                        "body":"Hi " + usr['name'].split(" ")[0] +", "+ sub_body,
+                    })
+
+            FcmAPI.send_notification(messagePacket)
+            callresponse = {
+                'passed': True,
+                'response':200,
+                'queryset':"retset"
+            }
+            return  HttpResponse(json.dumps(callresponse))
+
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    def todayclasses_reminder(response): 
+        if (response.method == "POST"):
+            #SEND NOTIFICATION TO THE USER TO QUEUE NEW ATTENDANCE
+            classes = Class.objects.all()
+            days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+            dt = datetime.now()
+            dayindex = dt.weekday()            
+            today = days[dayindex]
+            
+            for cl in classes:
+                todaylist = cl['timetable']['tableset'][today]
+                courses = []
+                class_code = cl.class_code
+                for cdata in todaylist:
+                    courses.append(cdata['code'])     
+
+                clist = ",".join(courses)
+                FcmAPI.send_topic_notification({
+                    "topic":class_code+"_today_classes",
+                    "title":"Your class for today",
+                    "body":"Find the classes slated for today:" + clist,
+                })         
+                
+            callresponse = {
+                'passed': True,
+                'response':200,
+                'queryset':"retset"
+            }
+            return  HttpResponse(json.dumps(callresponse))
+
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
 
 
 class UserAPI(View):
@@ -710,31 +1061,43 @@ class UserAPI(View):
                 'response':{},
                 'error':{}
             }
-            # user_code = response.session['user_data']['user_code']
-            # box_code = response.POST.get('box_code', 'boxcode')
-
             user_code = 'usercode'
-            box_code = 'boxcode'
             uploaded_file = response.FILES['document']
 
-            upload_subdir = os.path.join('uploaded', user_code, box_code)
-            upload_dir = os.path.join(settings.MEDIA_ROOT, upload_subdir)
+            # Define the path inside the static folder
+            current_time = int(time.time())
+            upload_dir = os.path.join(settings.BASE_DIR, 'static', f'user_uploads/{user_code}/{current_time}')
             os.makedirs(upload_dir, exist_ok=True)
             
-            filename_no_ext, ext = os.path.splitext(uploaded_file.name)
-            new_filename = f"{filename_no_ext}_{int(time.time())}{ext}"
-            file_path = os.path.join(upload_dir, new_filename)
+            file_path = os.path.join(upload_dir, uploaded_file.name)
 
             with open(file_path, 'wb+') as dest:
                 for chunk in uploaded_file.chunks():
                     dest.write(chunk)
+            
+            user_upd = Uploads_reference.objects.filter(user_code=user_code).last()                
+            user_upload_count = 0
+            user_upload_sum_size = 0
+            if (user_upd):                    
+                user_upload_count = user_upd['user_upload_count']
+                user_upload_sum_size = user_upd['user_upload_sum_size']
 
-            file_url = os.path.join(settings.MEDIA_URL, upload_subdir, new_filename)
-            full_url = response.build_absolute_uri(file_url)
+            upload_db = {
+                "path": file_path, #CODE OF THE BOX IT IS CONTAINED
+                "time": int(time.time()), #THIS IS THE SIMPLE IDENTIFIER WRITTEN ON THE BOX
+                "user": user_code,
+                "user_upload_count": user_upload_count + 1,
+                "user_upload_sum_size":user_upload_sum_size + uploaded_file.size,
+            }
+            upload_db_sl = ModelSL(data={**upload_db}, model=Uploads_reference, extraverify={}) 
+            upload_db_sl.is_valid() # MUST BE CALLED TO PROCEED
+            upload_db_sl.save()
+
+            file_url = f"https://openbox.bensons.africa/static/user_uploads/{user_code}/{current_time}/{uploaded_file.name}"
             
             callresponse['passed'] = True
             callresponse['response'] = {
-                'upload_url':full_url
+                'upload_url':file_url
             }
             return HttpResponse(json.dumps(callresponse))
         return JsonResponse({'error': 'Invalid request'}, status=400)
@@ -805,7 +1168,7 @@ class BoxAPI(View):
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
 
-    def find_box_by_state(self, response):
+    def find_box_by_openquery(self, response):
         if (response.method == "POST"):
             data =  json.loads(response.body.decode('utf-8'))
             callresponse = {
@@ -814,9 +1177,9 @@ class BoxAPI(View):
                 'error':{}
             }
             
-            boxes = Box.objects.filter(state=data['state'])
+            boxes = Box.objects.filter(**data['query'])
             if (not boxes):
-                callresponse['response'] = "Boxes not found in this location"
+                callresponse['response'] = "Boxes not found with this query"
                 return HttpResponse(json.dumps(callresponse))
             
             retboxes = []
@@ -856,41 +1219,117 @@ class BoxAPI(View):
             create_data = {}
             user_code = response.session['user_data']['user_code']
             box_code = data['box_code']
-            message_code = user_code + box_code + str (time.time())
+            extension_type = data['extension_type'] #dropbox, printbox
+            chat_code = extension_type + "-" + box_code + "-" + user_code
+            message_code = chat_code + "-" + str (time.time())
 
             create_data['user_code'] = user_code
             create_data['box_code'] = box_code
+            create_data['chat_code'] = chat_code
             create_data['message_code'] = message_code
-            create_data['message_side'] = data.get('message_type')
+            create_data['message_side'] = data.get('message_side')
             create_data['message_type'] = data.get('message_type')
             create_data['text'] = data['text']
             create_data['document_url'] = data.get('document_url')
             create_data['time'] = time.time()
 
-            if (data.get('message_type') == 'upload_print_document'):
-                #COLLECT THE FILE DATA AND SAVE IT IN 
-                output_dir = os.path.join(settings.BASE_DIR, 'static', 'uploads/user_id/box_id/time/')
-                os.makedirs(output_dir, exist_ok=True)
-                output_path = os.path.join(output_dir, 'filename.ext')
-                response = "The total cost of the printing is 20million"
+            user = User.objects.filter(user_code=user_code)[0]
+            box = Box.objects.filter(box_code=box_code)[0]
             
-            if (data.get('message_type') == 'print'):
-                #BILL THE USER BEFORE INITIATING TASK 
+            if (data.get('message_type') == 'print'):                    
+
+                #UPLOAD THE DOCUMENT FOR PRINTING
+                uploaded_file = response.FILES['document']
+
+                current_time = int(time.time())
+                static_path = f'chat_uploads/{user_code}/{chat_code}/{current_time}'
+                upload_dir = os.path.join(settings.BASE_DIR, 'static', static_path)
+                os.makedirs(upload_dir, exist_ok=True)                
+                file_path = os.path.join(upload_dir, uploaded_file.name)
+                file_url = f"https://openbox.bensons.africa/static/{static_path}/{uploaded_file.name}"
+                
+                with open(file_path, 'wb+') as dest:
+                    for chunk in uploaded_file.chunks():
+                        dest.write(chunk)
+
+                #UPDATE THE UPLOADS TRACKING TABLE
+                user_upd = Uploads_reference.objects.filter(user_code=user_code).last()                
+                user_upload_count = 0
+                user_upload_sum_size = 0
+                if (user_upd):
+                    user_upload_count = user_upd['user_upload_count']
+                    user_upload_sum_size = user_upd['user_upload_sum_size']
+
+                upload_db = {
+                    "path": file_path, #CODE OF THE BOX IT IS CONTAINED
+                    "time": int(time.time()), #THIS IS THE SIMPLE IDENTIFIER WRITTEN ON THE BOX
+                    "user": user_code,
+                    "user_upload_count": user_upload_count + 1,
+                    "user_upload_sum_size":user_upload_sum_size + uploaded_file.size,
+                }
+                upload_db_sl = ModelSL(data={**upload_db}, model=Uploads_reference, extraverify={}) 
+                upload_db_sl.is_valid() # MUST BE CALLED TO PROCEED
+                upload_db_sl.save()
+
+
+                #BILL THE USER BEFORE INITIATING TASK  
+                print_price = data['pages_range'] * box.price_per_printpage
+                if (data.get('print_type') == 'stored_printing'):
+                    duration_price = box.storage_price_data[data['duration_key']]
+                    print_price += duration_price
+
+                if (user.cashbalance < print_price):
+                    callresponse['response'] = 'Cash Out of Balance'
+                    return HttpResponse(json.dumps(callresponse))
+
+                user.cashbalance -= print_price
+                user.save()
+                
+                #INSERT TRANSACTION 
+                add_trans = TransactionAPI.add_transaction({
+                    "payer_code":user_code,
+                    "type":'in',
+                    "amount":print_price,
+                    "user_balance_to_date":user.cashbalance,
+                    "item_code":"print_payment",
+                    "description":"Payment for printing and storage"
+                })
+                if (not add_trans):
+                    callresponse['passed'] = False,
+                    return HttpResponse(json.dumps(callresponse))
+                        
 
                 #START A PRINTING TASK                
-                pg_hole_code = "find_the_free_hole"
-                access_code = "access_code"
+                pg_hole_id = "nil"
+                pigeonholes = box.pigeonholes
+                phindex = -1
+                for ph in pigeonholes:
+                    if (ph['default_use'] != 'print_hole'):
+                        continue
+                    if (ph['status'] != '0'): 
+                        continue
+                    pg_hole_id = ph['identifier']
+                    phindex += 1
+                    break
+                
+                if (pg_hole_id == 'nil'):
+                    callresponse['response'] = 'No print hole is found in this box'
+                    return HttpResponse(json.dumps(callresponse))
+
+                access_code = random.randint(1000, 9999)
                 task_data = {
                     "task_code": 'dummy',
                     "task_type" : "print", #COULD BE print, storage, movement
                     "access_code": access_code, #GENERATE A RANDOM 4-DIGIT CODE
                     "box_code": box_code, #THE CURRENT BOX PERFORMNG THIS TASK
-                    "pg_code": pg_hole_code, #THE CURRENT SPECIFIC PG HOLE 
+                    "pg_id": pg_hole_id, #THE CURRENT SPECIFIC PG HOLE 
                     "package_data": {
                         "package_type":"print_doc",
-                        "document_source_url":data.get('document_url'),
+                        "document_source_url":file_url,
                         "package_weight":"estimate_with_print_pages",
-                        'task_history':["dummy"]
+                        'task_history':[],
+                        'holding_start':time.time(),
+                        'holding_duration':data.get('duration_key')
                     }
                 }
                 task_sl = ModelSL(data={**task_data}, model=Task, extraverify={}) 
@@ -898,39 +1337,84 @@ class BoxAPI(View):
                 ins_id = task_sl.save().__dict__['id']
                 task_code = numberEncode(ins_id, 10)
                 task_sl.validated_data['task_code'] = task_code
-                task_sl.validated_data['package_data']['task_history'][0] = task_code
+                task_sl.validated_data['package_data']['task_history'].append(task_code)
                 task_sl.save()
 
                 #UPDATE THE HOLE TO BUSY
+                box.pigeonholes[phindex]['status'] = 1
+                box.save()
 
                 #NOTIFY THE BOX OF A PRINTING BY UPDATING BOX FIREBASE ENTRY
-                #tasks/box_id/task_code:"print",task_code2:"print"
+                #tasks/box_id:[task_codes]
+                db_data = FcmAPI.get_firedb_data('tasks/'+box_code)
+                upload_data = db_data[1]
+                upload_data.append(task_code)
+                ref = db_data[1]
+                ref.update(upload_data)
 
                 response = "Your printing has started, your package is stashed for printing"
                 response_data = {
                     'task_code':task_code,
-                    'pg_hole_code':pg_hole_code,
+                    'pg_hole_id':pg_hole_id,
                     'access_code':access_code
                 }
 
             if (data.get('message_type') == 'store_package'):
-                #BILL THE USER BEFORE INITIATING TASK 
+                #BILL THE USER BEFORE INITIATING TASK  
+                storage_price = box.storage_price_data[data['duration_key']]
+                if (user.cashbalance < storage_price):
+                    callresponse['response'] = 'Cash Out of Balance'
+                    return HttpResponse(json.dumps(callresponse))
 
+                user.cashbalance -= storage_price
+                user.save()
+                
+                #INSERT TRANSACTION 
+                add_trans = TransactionAPI.add_transaction({
+                    "payer_code":user_code,
+                    "type":'in',
+                    "amount":storage_price,
+                    "user_balance_to_date":user.cashbalance,
+                    "item_code":"storage_payment",
+                    "description":"Payment for storage"
+                })
+                if (not add_trans):
+                    callresponse['passed'] = False,
+                    return HttpResponse(json.dumps(callresponse))
 
                 #START A STORAGE TASK                
-                pg_hole_code = "find_the_free_hole"
-                access_code = "access_code"
+                pg_hole_id = "nil"
+                pigeonholes = box.pigeonholes
+                phindex = -1
+                for ph in pigeonholes:
+                    #USE ANY AVAILABLE EVEN PRINT HOLES
+                    # if (ph['default_use'] != 'storage_hole'):
+                    #     continue
+                    if (ph['status'] != '0'): 
+                        continue
+                    pg_hole_id = ph['identifier']
+                    phindex += 1
+                    break
+                
+                if (pg_hole_id == 'nil'):
+                    callresponse['response'] = 'No print hole is found in this box'
+                    return HttpResponse(json.dumps(callresponse))
+
+                access_code = random.randint(1000, 9999)
+
                 task_data = {
                     "task_code": 'dummy',
                     "task_type" : "storage", #COULD BE print, storage, movement
                     "access_code": access_code, #GENERATE A RANDOM 4-DIGIT CODE
                     "box_code": box_code, #THE CURRENT BOX PERFORMNG THIS TASK
-                    "pg_code": pg_hole_code, #THE CURRENT SPECIFIC PG HOLE 
+                    "pg_code": pg_hole_id, #THE CURRENT SPECIFIC PG HOLE 
+                    "status":'active',
                     "package_data": {
                         "package_type":"user_package",
                         "package_weight":"user_pack_weight",
-                        'task_history':["dummy"],
-                        'holding_duration':data.get('duration')
+                        'task_history':[],
+                        'holding_start':time.time(),
+                        'holding_duration':data['duration_key']
                     }
                 }
                 task_sl = ModelSL(data={**task_data}, model=Task, extraverify={}) 
@@ -938,13 +1422,17 @@ class BoxAPI(View):
                 ins_id = task_sl.save().__dict__['id']
                 task_code = numberEncode(ins_id, 10)
                 task_sl.validated_data['task_code'] = task_code
-                task_sl.validated_data['package_data']['task_history'][0] = task_code
+                task_sl.validated_data['package_data']['task_history'].append(task_code)
                 task_sl.save()
+
+                #UPDATE THE HOLE TO BUSY
+                box.pigeonholes[phindex]['status'] = 1
+                box.save()
 
                 response = "The space is ready for use"
                 response_data = {
                     'task_code':task_code,
-                    'pg_hole_code':pg_hole_code,
+                    'pg_hole_code':pg_hole_id,
                     'access_code':access_code
                 }
 
@@ -971,13 +1459,12 @@ class BoxAPI(View):
             data =  json.loads(response.body.decode('utf-8'))
 
             user_code = response.session['user_data']['user_code']
-            box_code = data['box_code']
+            chat_code = data['chat_code']
             time_range = data.get('time_range') # [timestart, timeend]
             count = int (data.get('count', 10))
             
             searchquery = {
-                "user_code": user_code,
-                "box_code": box_code,
+                "chat_code": chat_code,
             }
 
             # Check if time_range is provided (it should be a tuple or list of 2 values: start time, end time)
@@ -1005,6 +1492,56 @@ class BoxAPI(View):
 
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    def get_remaining_messages(self, response):
+        if (response.method == "POST"):
+            data =  json.loads(response.body.decode('utf-8'))
+
+            user_code = response.session['user_data']['user_code']
+            chat_code = data['chat_code']
+            last_message_code = data.get('last_message_code') # [timestart, timeend]
+            last_message_time = data.get('last_message_time') # Optional
+            
+            searchquery = {
+                "chat_code": chat_code,
+                "message_code": last_message_code,
+            }
+
+            # Check if time_range is provided (it should be a tuple or list of 2 values: start time, end time)
+            if not last_message_time:
+                messages = Box_message.objects.filter(**searchquery)
+                if (messages):
+                    last_message_time = messages[0].time
+                else:
+                    last_message_time = 0
+
+            searchquery = {
+                "chat_code": chat_code,
+                "time__range":(last_message_time, time.time())
+            }
+
+            # Query the database with the searchquery dictionary
+            messages = Box_message.objects.filter(**searchquery).order_by('time')
+
+            # Limit the number of messages if `count` is provided
+            if data.get('last_message_time'):
+                messages = messages[:data.get('last_message_time')]
+
+            # Prepare the response
+            callresponse = {
+                'passed': True,
+                'response': 200,
+                'queryset': list(messages.values())  # Convert QuerySet to a list of dictionaries
+            }
+
+            return HttpResponse(
+                json.dumps(callresponse),
+                content_type="application/json"
+            )
+
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
 
 
 class TransactionAPI:
@@ -1098,6 +1635,48 @@ class TransactionAPI:
 
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    def add_transaction(transaction_data):
+        '''
+            {
+                "payer_code":payer,
+                "type":_type,
+                "amount":12,
+                "item_code":"print_payment",
+                "description":"Payment for printing and storage",
+                "user_balance_to_date":user.cashbalance,
+
+            }
+        '''
+        
+        try:
+            recent_transact = Transaction.objects.latest("id")
+        except Exception as e:
+            recent_transact = None
+
+        balance2date = 0
+        if (recent_transact):
+            balance2date = recent_transact.balance_to_date
+
+        if (transaction_data['in']):
+            b2d = balance2date+transaction_data['amount']
+        if (transaction_data['out']):
+            b2d = balance2date - transaction_data['amount']
+            
+        transaction_data = {
+            **transaction_data,
+            "transact_code":"__",
+            "system_balance_to_date":b2d,
+            "date":datetime.now().isoformat(),
+        }
+        sl = ModelSL(data=transaction_data, model=Transaction, extraverify={})
+        if (sl.is_valid()):
+            ins_id = sl.save().__dict__['id']
+            sl.validated_data['transact_code'] = numberEncode(ins_id, 10)
+            sl.save()
+            return True
+        else:
+            return False
 
 
     def fetch(self, response):
