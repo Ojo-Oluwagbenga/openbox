@@ -977,6 +977,8 @@ class UserAPI(View):
                 'email':data['email'],
                 'error':{},
             }
+            callresponse['api_key'] = GeneralAPI.getHash(user_code+"-"+str(time.time())+"-valid",'apiKey')
+
             return HttpResponse(json.dumps(callresponse))
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
@@ -1010,6 +1012,7 @@ class UserAPI(View):
                 return HttpResponse(json.dumps(callresponse))
             callresponse['Message'] = "User found"
             callresponse['passed'] = True
+            callresponse['api_key'] = GeneralAPI.getHash(u_data.user_code+"-"+str(time.time())+"-valid",'apiKey')
 
             new_data =  {
                 'loggedin':True,
@@ -1053,6 +1056,18 @@ class UserAPI(View):
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
 
+    def readApiKey(apikey):
+        text = GeneralAPI.readHash(apikey, 'apiKey')
+        if not text:
+            return False
+        parts = text.split('-')
+        if len(parts) != 3:
+            return False
+        if parts[2] != 'valid':
+            return False
+        return parts[0]
+        
+
     @csrf_exempt
     def add_document(self, response):
         if response.method == 'POST' and response.FILES.get('document'):
@@ -1061,7 +1076,12 @@ class UserAPI(View):
                 'response':{},
                 'error':{}
             }
-            user_code = 'usercode'
+            data =  json.loads(response.body.decode('utf-8'))
+            user_code = UserAPI.readApiKey(data['apiKey'])
+            if (not user_code):
+                callresponse['Message'] = "Invalid access key"
+                return HttpResponse(json.dumps(callresponse))
+            
             uploaded_file = response.FILES['document']
 
             # Define the path inside the static folder
@@ -1108,7 +1128,12 @@ class UserAPI(View):
                 'passed': False,
                 'error':{}
             }
-            user_code = response.session['user_data']['user_code']
+            data =  json.loads(response.body.decode('utf-8'))
+            user_code = UserAPI.readApiKey(data['apiKey'])
+            if (not user_code):
+                callresponse['Message'] = "Invalid access key"
+                return HttpResponse(json.dumps(callresponse))
+            
 
             #CHECK USER'S VALIDIDTY
             _recent_tasks = Task.objects.filter(user_code=user_code).order_by('-time_in')[:4]
@@ -1210,8 +1235,12 @@ class BoxAPI(View):
             callresponse = {
                 'passed': False,
                 'response':400,
-                'comment_code':"comment_code",
             }
+            user_code = UserAPI.readApiKey(data['apiKey'])
+            if (not user_code):
+                callresponse['Message'] = "Invalid access key"
+                return HttpResponse(json.dumps(callresponse))
+            
             task_code = "" #IN CASE A MESSAGE COMES IN FORM OF TASK REQUEST
             response = '',
             response_data = {}
@@ -1284,6 +1313,14 @@ class BoxAPI(View):
 
                 user.cashbalance -= print_price
                 user.save()
+                NotificationAPI.send({
+                    "callback_url":'-',
+                    "text":"Your account has been billed #"+str(print_price)+" for the printing service!",
+                    "time":'date',
+                    "category":"pay",
+                    "owners":[user_code],
+                    "otherdata":{}, #Any other data useful for that notification
+                })
                 
                 #INSERT TRANSACTION 
                 add_trans = TransactionAPI.add_transaction({
@@ -1351,6 +1388,15 @@ class BoxAPI(View):
                 upload_data.append(task_code)
                 ref = db_data[1]
                 ref.update(upload_data)
+
+                NotificationAPI.send({
+                    "callback_url":'-',
+                    "text":f"Your printing has begun. Access your document at {box.name}, {pg_hole_id} with passcode {access_code}",
+                    "time":'date',
+                    "category":"access",
+                    "owners":[user_code],
+                    "otherdata":{}, #Any other data useful for that notification
+                })
 
                 response = "Your printing has started, your package is stashed for printing"
                 response_data = {
@@ -1429,6 +1475,15 @@ class BoxAPI(View):
                 box.pigeonholes[phindex]['status'] = 1
                 box.save()
 
+                NotificationAPI.send({
+                    "callback_url":'-',
+                    "text":f"Your space is ready. Access space at {box.name}, {pg_hole_id} with passcode {access_code}",
+                    "time":'date',
+                    "category":"access",
+                    "owners":[user_code],
+                    "otherdata":{}, #Any other data useful for that notification
+                })
+
                 response = "The space is ready for use"
                 response_data = {
                     'task_code':task_code,
@@ -1497,7 +1552,11 @@ class BoxAPI(View):
         if (response.method == "POST"):
             data =  json.loads(response.body.decode('utf-8'))
 
-            user_code = response.session['user_data']['user_code']
+            user_code = UserAPI.readApiKey(data['apiKey'])
+            if (not user_code):
+                callresponse['Message'] = "Invalid access key"
+                return HttpResponse(json.dumps(callresponse))
+            
             chat_code = data['chat_code']
             last_message_code = data.get('last_message_code') # [timestart, timeend]
             last_message_time = data.get('last_message_time') # Optional
@@ -1541,7 +1600,6 @@ class BoxAPI(View):
 
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
-
 
 
 class TransactionAPI:
@@ -1677,7 +1735,6 @@ class TransactionAPI:
             return True
         else:
             return False
-
 
     def fetch(self, response):
         if (response.method == "POST"):
@@ -1861,7 +1918,11 @@ class TransactionAPI:
 
     def fetch_transactions(self, response):
         if (response.method == "POST"):
-            user_code = response.session['user_data']['user_code']
+            data =  json.loads(response.body.decode('utf-8'))
+            user_code = UserAPI.readApiKey(data['apiKey'])
+            if (not user_code):
+                callresponse['Message'] = "Invalid access key"
+                return HttpResponse(json.dumps(callresponse))
             
             fetchpair = {'payer_code' : user_code}
             fetchset = ['payer_code','amount','type', 'date']
@@ -1917,7 +1978,10 @@ class TransactionAPI:
     def clear_outstanding(self, response):
         if (response.method == "POST"):
             data =  json.loads(response.body.decode('utf-8'))
-            user_code = response.session['user_data']['user_code']
+            user_code = UserAPI.readApiKey(data['apiKey'])
+            if (not user_code):
+                callresponse['Message'] = "Invalid access key"
+                return HttpResponse(json.dumps(callresponse))
 
             outstanding = PayTransact.objects.filter(user_code=user_code)
             if not outstanding:
@@ -1990,7 +2054,11 @@ class TransactionAPI:
             }
 
             #Complete and destroy outstandng transactions
-            user_code = response.session['user_data']['user_code']
+            user_code = UserAPI.readApiKey(data['apiKey'])
+            if (not user_code):
+                callresponse['Message'] = "Invalid access key"
+                return HttpResponse(json.dumps(callresponse))
+            
             outstanding = PayTransact.objects.filter(user_code=user_code)
             if outstanding:
                 callresponse['Message'] = "Click clear outstanding transaction before proceeding"
@@ -2027,7 +2095,10 @@ class TransactionAPI:
 
             reference = data['reference']
             pay_code = data['pay_code']
-            user_code = response.session['user_data']['user_code']
+            user_code = UserAPI.readApiKey(data['apiKey'])
+            if (not user_code):
+                callresponse['Message'] = "Invalid access key"
+                return HttpResponse(json.dumps(callresponse))
 
             params = {
                 # "Authorization":"Bearer sk_live_eabc4113227dc2530121c270fde2497ca123527c",
@@ -2093,7 +2164,11 @@ class TransactionAPI:
     def add_user_payment(**kwargs):
         response = kwargs['response']
         amount = kwargs['amount']
-        user_code = response.session['user_data']["user_code"]
+        data =  json.loads(response.body.decode('utf-8'))
+        user_code = UserAPI.readApiKey(data['apiKey'])
+        if (not user_code):
+            callresponse['Message'] = "Invalid access key"
+            return HttpResponse(json.dumps(callresponse))
 
         amount_paid = amount
         text = ['','']
