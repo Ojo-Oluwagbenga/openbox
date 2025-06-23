@@ -13,6 +13,8 @@ class User(models.Model):
     phone_number = models.CharField(max_length=100) 
     join_time = models.IntegerField(default=0)
     cashbalance = models.FloatField(default=0)
+    unread_notice_count = models.IntegerField(default=0)
+
     
     user_code = models.CharField(max_length=50)   
     user_type = models.CharField(max_length=50) #supervisor or supervisee
@@ -38,6 +40,7 @@ class Box(models.Model):
     admins = ArrayField(models.CharField(max_length=100), blank=True)
     storage_price_data = ArrayField(models.JSONField(null=True) , blank=True)
     '''
+        storage_price_data takes the form 
         "6hrs":20,
         "1day":30,
         "3days":70,
@@ -121,10 +124,11 @@ class Box_message(models.Model):
     chat_code = models.CharField(max_length=100) #THIS IS CAN BE ext-boxcode(print-boxcode, drop-boxcode) 
     user_code = models.CharField(max_length=100)
     box_code = models.CharField(max_length=100) 
-    message_side = models.CharField(max_length=50) # user or computer
-    message_type = models.CharField(max_length=50) # different keys should be used here for different display
+    message_side = models.CharField(max_length=50, default='system') # user or system
+    message_type = models.CharField(max_length=50, default="ordinary") # different keys should be used here for different display E.G document_display, ordinary, transaction_success, e.t.c
+    attached_task = models.CharField(max_length=50, default="none") # can be print, storage e.t.c
     text = models.CharField(max_length=600) 
-    document_url = models.CharField(max_length=100) 
+    document_url = models.CharField(max_length=100, default="none") 
     time = models.BigIntegerField(default=current_unix_time)
     otherdata = models.JSONField(null=True)
 
@@ -160,7 +164,7 @@ class Transaction(models.Model):
     data = models.JSONField(null=True) #This contains other important data to this like withdrawal data
 
 class Uploads_reference(models.Model):
-    path = models.CharField(max_length=100) #CODE OF THE BOX IT IS CONTAINED
+    path = models.CharField(max_length=500) #CODE OF THE BOX IT IS CONTAINED
     time = models.FloatField(default=0) #THIS IS THE SIMPLE IDENTIFIER WRITTEN ON THE BOX
     user = models.CharField(max_length=100) 
     user_upload_count = models.IntegerField(default=0) 

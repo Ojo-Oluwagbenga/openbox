@@ -21,4 +21,5 @@ class Manager:
                 'errorcode':201,
                 "Message": str(e)
             }
+            print (str(e))
             return HttpResponse(json.dumps(ret))

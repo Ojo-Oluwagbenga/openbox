@@ -63,6 +63,12 @@ def logout(response):
 def bluetest(response):
     return render(response, "bluetest.html", {})
 
+def uploadboxes(response):
+    return render(response, "uploadboxes.html", {})
+
+def error_view(response):
+    return render(response, "error_view.html", {})
+
 # @csrf_exempt  # For development only; use CSRF tokens in production
 def upload_document(request):
     if request.method == 'POST' and request.FILES.get('document'):

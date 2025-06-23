@@ -11,7 +11,12 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from django.db.models import Q
+from django.db.models import F
+
 import random
+import pandas as pd
+import ast
+from datetime import datetime
 
 
 
@@ -538,7 +543,10 @@ class FcmAPI:
             firebase_admin.initialize_app(cred, {
                 'databaseURL': "https://oneklass-v2-default-rtdb.firebaseio.com"
             })
+            
         except Exception as e:
+            print (e)
+            print("Unable")
             pass
 
         # Reference to your Firebase database
@@ -977,7 +985,7 @@ class UserAPI(View):
                 'email':data['email'],
                 'error':{},
             }
-            callresponse['api_key'] = GeneralAPI.getHash(user_code+"-"+str(time.time())+"-valid",'apiKey')
+            callresponse['apiKey'] = GeneralAPI.getHash(user_code+"-"+str(time.time())+"-valid",'apiKey')
 
             return HttpResponse(json.dumps(callresponse))
         else:
@@ -1012,7 +1020,7 @@ class UserAPI(View):
                 return HttpResponse(json.dumps(callresponse))
             callresponse['Message'] = "User found"
             callresponse['passed'] = True
-            callresponse['api_key'] = GeneralAPI.getHash(u_data.user_code+"-"+str(time.time())+"-valid",'apiKey')
+            callresponse['apiKey'] = GeneralAPI.getHash(u_data.user_code+"-"+str(time.time())+"-valid",'apiKey')
 
             new_data =  {
                 'loggedin':True,
@@ -1095,12 +1103,12 @@ class UserAPI(View):
                 for chunk in uploaded_file.chunks():
                     dest.write(chunk)
             
-            user_upd = Uploads_reference.objects.filter(user_code=user_code).last()                
+            user_upd = Uploads_reference.objects.filter(user=user_code).last()                
             user_upload_count = 0
             user_upload_sum_size = 0
             if (user_upd):                    
-                user_upload_count = user_upd['user_upload_count']
-                user_upload_sum_size = user_upd['user_upload_sum_size']
+                user_upload_count = user_upd.user_upload_count
+                user_upload_sum_size = user_upd.user_upload_sum_size
 
             upload_db = {
                 "path": file_path, #CODE OF THE BOX IT IS CONTAINED
@@ -1231,24 +1239,27 @@ class BoxAPI(View):
 
     def add_message(self, response):
         if (response.method == "POST"):
-            data =  json.loads(response.body.decode('utf-8'))
+
+            data =  response.POST
             callresponse = {
                 'passed': False,
                 'response':400,
             }
+            # callresponse['Message'] = "Invalid access key"
+            # return HttpResponse(json.dumps(callresponse))
+        
             user_code = UserAPI.readApiKey(data['apiKey'])
             if (not user_code):
                 callresponse['Message'] = "Invalid access key"
                 return HttpResponse(json.dumps(callresponse))
             
             task_code = "" #IN CASE A MESSAGE COMES IN FORM OF TASK REQUEST
-            response = '',
+            response_text = '',
             response_data = {}
 
             create_data = {}
-            user_code = response.session['user_data']['user_code']
             box_code = data['box_code']
-            extension_type = data['extension_type'] #dropbox, printbox
+            extension_type = data.get('extension_type') #dropbox, printbox #THIS IS THE CHAT TYPE
             chat_code = extension_type + "-" + box_code + "-" + user_code
             message_code = chat_code + "-" + str (time.time())
 
@@ -1260,21 +1271,23 @@ class BoxAPI(View):
             create_data['message_type'] = data.get('message_type')
             create_data['text'] = data['text']
             create_data['document_url'] = data.get('document_url')
-            create_data['time'] = time.time()
+            create_data['attached_task'] = data.get('attached_task')
+            # create_data['time'] = time.time()
 
             user = User.objects.filter(user_code=user_code)[0]
             box = Box.objects.filter(box_code=box_code)[0]
             
-            if (data.get('message_type') == 'print'):                    
+            if (data.get('attached_task') == 'print_doc'):                    
 
                 #UPLOAD THE DOCUMENT FOR PRINTING
-                uploaded_file = response.FILES['document']
+                uploaded_file = response.FILES['document_to_print']
 
                 current_time = int(time.time())
                 static_path = f'chat_uploads/{user_code}/{chat_code}/{current_time}'
                 upload_dir = os.path.join(settings.BASE_DIR, 'static', static_path)
                 os.makedirs(upload_dir, exist_ok=True)                
                 file_path = os.path.join(upload_dir, uploaded_file.name)
+                print (file_path)
                 file_url = f"https://openbox.bensons.africa/static/{static_path}/{uploaded_file.name}"
                 
                 with open(file_path, 'wb+') as dest:
@@ -1282,34 +1295,39 @@ class BoxAPI(View):
                         dest.write(chunk)
 
                 #UPDATE THE UPLOADS TRACKING TABLE
-                user_upd = Uploads_reference.objects.filter(user_code=user_code).last()                
+                user_upd = Uploads_reference.objects.filter(user=user_code).last()                
                 user_upload_count = 0
                 user_upload_sum_size = 0
                 if (user_upd):
-                    user_upload_count = user_upd['user_upload_count']
-                    user_upload_sum_size = user_upd['user_upload_sum_size']
+                    user_upload_count = user_upd.user_upload_count
+                    user_upload_sum_size = user_upd.user_upload_sum_size
 
                 upload_db = {
-                    "path": file_path, #CODE OF THE BOX IT IS CONTAINED
-                    "time": int(time.time()), #THIS IS THE SIMPLE IDENTIFIER WRITTEN ON THE BOX
+                    "path": file_path,
+                    "time": int(time.time()),
                     "user": user_code,
                     "user_upload_count": user_upload_count + 1,
                     "user_upload_sum_size":user_upload_sum_size + uploaded_file.size,
                 }
                 upload_db_sl = ModelSL(data={**upload_db}, model=Uploads_reference, extraverify={}) 
-                upload_db_sl.is_valid() # MUST BE CALLED TO PROCEED
+                if not upload_db_sl.is_valid(): # MUST BE CALLED TO PROCEED
+                    print ("Unable to add upload record")
+                    print (upload_db_sl.cError())
                 upload_db_sl.save()
 
 
                 #BILL THE USER BEFORE INITIATING TASK  
-                print_price = data['pages_range'] * box.price_per_printpage
+                # number_of_pages = int(data['pages_range'][1]) - int(data['pages_range'][0]) 
+                number_of_pages = 10
+
+                print_price = number_of_pages * box.price_per_printpage
                 if (data.get('print_type') == 'stored_printing'):
-                    duration_price = box.storage_price_data[data['duration_key']]
+                    duration_price = box.storage_price_data[0][data['duration_key']]
                     print_price += duration_price
 
                 if (user.cashbalance < print_price):
                     callresponse['response'] = 'Cash Out of Balance'
-                    return HttpResponse(json.dumps(callresponse))
+                    # return HttpResponse(json.dumps(callresponse))
 
                 user.cashbalance -= print_price
                 user.save()
@@ -1340,14 +1358,17 @@ class BoxAPI(View):
                 pg_hole_id = "nil"
                 pigeonholes = box.pigeonholes
                 phindex = -1
+                print(pigeonholes)
                 for ph in pigeonholes:
+                    print(ph)
                     if (ph['default_use'] != 'print_hole'):
                         continue
-                    if (ph['status'] != '0'): 
-                        continue
+                    # if (ph['status'] != '0'): 
+                    #     continue
                     pg_hole_id = ph['identifier']
                     phindex += 1
                     break
+                
                 
                 if (pg_hole_id == 'nil'):
                     callresponse['response'] = 'No print hole is found in this box'
@@ -1356,6 +1377,7 @@ class BoxAPI(View):
                 access_code = random.randint(1000, 9999)
                 task_data = {
                     "task_code": 'dummy',
+                    "user_code":user_code,
                     "task_type" : "print", #COULD BE print, storage, movement
                     "access_code": access_code, #GENERATE A RANDOM 4-DIGIT CODE
                     "box_code": box_code, #THE CURRENT BOX PERFORMNG THIS TASK
@@ -1370,7 +1392,9 @@ class BoxAPI(View):
                     }
                 }
                 task_sl = ModelSL(data={**task_data}, model=Task, extraverify={}) 
-                task_sl.is_valid() # MUST BE CALLED TO PROCEED
+                if (not task_sl.is_valid()): # MUST BE CALLED TO PROCEED
+                    print ("error occured")
+                    print (task_sl.cError())
                 ins_id = task_sl.save().__dict__['id']
                 task_code = numberEncode(ins_id, 10)
                 task_sl.validated_data['task_code'] = task_code
@@ -1383,11 +1407,24 @@ class BoxAPI(View):
 
                 #NOTIFY THE BOX OF A PRINTING BY UPDATING BOX FIREBASE ENTRY
                 #tasks/box_id:[task_codes]
-                db_data = FcmAPI.get_firedb_data('tasks/'+box_code)
-                upload_data = db_data[1]
-                upload_data.append(task_code)
-                ref = db_data[1]
-                ref.update(upload_data)
+                # db_data = FcmAPI.get_firedb_data('tasks/'+box_code)
+                # upload_data = db_data[1]
+                
+                # upload_data.append(task_code)
+                # ref = db_data[1]
+                # ref.update(upload_data)
+
+                db_data = FcmAPI.get_firedb_data('tasks/' + box_code)
+                ref = db_data[0]
+                upload_data = db_data[1] or []
+
+                if isinstance(upload_data, list):
+                    upload_data.append(task_code)
+                    ref.set(upload_data)  # use set() for list data
+                else:
+                    ref.set([task_code]) 
+
+                    
 
                 NotificationAPI.send({
                     "callback_url":'-',
@@ -1398,7 +1435,7 @@ class BoxAPI(View):
                     "otherdata":{}, #Any other data useful for that notification
                 })
 
-                response = "Your printing has started, your package is stashed for printing"
+                response_text = "Your printing has started, your package is stashed for printing"
                 response_data = {
                     'task_code':task_code,
                     'pg_hole_id':pg_hole_id,
@@ -1484,7 +1521,7 @@ class BoxAPI(View):
                     "otherdata":{}, #Any other data useful for that notification
                 })
 
-                response = "The space is ready for use"
+                response_text = "The space is ready for use"
                 response_data = {
                     'task_code':task_code,
                     'pg_hole_code':pg_hole_id,
@@ -1492,15 +1529,18 @@ class BoxAPI(View):
                 }
 
 
-            box_sl = ModelSL(data={**create_data}, model=Box_message, extraverify={}) 
-            box_sl.is_valid() # MUST BE CALLED TO PROCEED
-            box_sl.save()
+            boxm_sl = ModelSL(data={**create_data}, model=Box_message, extraverify={}) 
+            if (not boxm_sl.is_valid()): # MUST BE CALLED TO PROCEED
+                print ("error occure")
+                print(boxm_sl.cError())
+
+            boxm_sl.save()
                        
             callresponse = {
                 'passed': True,
                 'response':200,
                 'message_code':message_code,
-                'response':response,
+                'response_text':response_text,
                 'response_data':response_data,
             }
 
@@ -1600,6 +1640,46 @@ class BoxAPI(View):
 
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    @csrf_exempt
+    def upload_boxes(self, response):
+        if response.method == 'POST' and response.FILES.get('document'):
+            box = Box.objects.filter(box_code='BOX005')[0]
+            print (box.name)
+            return JsonResponse({'message': 'Boxes imported successfully'}, status=201)
+
+            try:
+                file = response.FILES['document']
+                df = pd.read_excel(file)
+
+                for _, row in df.iterrows():
+                    Box.objects.create(
+                        box_code=row['box_code'],
+                        name=row['name'],
+                        address=row['address'],
+                        description=row['description'],
+                        box_type=row['box_type'],
+                        create_time=row['create_time'],
+                        admins=ast.literal_eval(row['admins']),
+                        storage_price_data=ast.literal_eval(row['storage_price_data']),
+                        price_per_printpage=row['price_per_printpage'],
+                        pigeonholes=ast.literal_eval(row['pigeonholes']),
+                        state=row['state'],
+                        city=row['city'],
+                        street=row['street'],
+                        latitude=row['latitude'],
+                        longitude=row['longitude'],
+                        status=row['status'],
+                    )
+
+                print ("Success")
+
+                return JsonResponse({'message': 'Boxes imported successfully'}, status=201)
+            except Exception as e:
+                return JsonResponse({'error': str(e)}, status=400)
+
+        return JsonResponse({'error': 'No file uploaded'}, status=400)
+
 
 
 class TransactionAPI:
@@ -1714,11 +1794,11 @@ class TransactionAPI:
 
         balance2date = 0
         if (recent_transact):
-            balance2date = recent_transact.balance_to_date
+            balance2date = recent_transact.system_balance_to_date
 
-        if (transaction_data['in']):
+        if (transaction_data['type'] == 'in'):
             b2d = balance2date+transaction_data['amount']
-        if (transaction_data['out']):
+        if (transaction_data['type'] == 'out'):
             b2d = balance2date - transaction_data['amount']
             
         transaction_data = {
@@ -2384,7 +2464,7 @@ class NotificationAPI:
             'error':{}
         }
         current_date = datetime.now().isoformat()
-        dataset['time']=current_date
+        dataset['time']= int (time.time())
 
         dataset['noti_code'] = "dummy"
         sl = ModelSL(data=dataset, model=Notification, extraverify={})
@@ -2426,7 +2506,7 @@ class NotificationAPI:
         if _all:
             User.objects.all().update(unread_notice_count=F('unread_notice_count')+1)
         else:
-            User.objects.filter(Q(user_code__in=userlist) | Q(class_code__in=classlist) | Q(groups__overlap=grouplist)).update(unread_notice_count=F('unread_notice_count')+1)
+            User.objects.filter(Q(user_code__in=userlist)).update(unread_notice_count=F('unread_notice_count')+1)
 
         # return #FIX THIS WHEN YOU GET THE WEBSOCKET WORKING PROPERLY
         try:

@@ -1,0 +1,14 @@
+{
+    "apiKey":"",
+    "extension_type":"printbox",
+    "box_code":"BOX005",
+    "message_side":"user", //OR system
+    "message_type":"ordinary", //OR transaction_success_display, document_display etc default is "ordinary"
+    "text":"The messsage to save",
+    "document_url":"nil", //default is nil
+    "attached_task":"print_doc", //or (print_doc, store_package or ordinary)
+    //if print has been set as attached task
+    "document_to_print":"attacchde", // required if task is print_doc
+    "print_type":"stored_printing", // required if task is print_doc (instant_printing or stored_printing)
+    "duration_key":"2weeks", // required if print_type is stored_printing ['6hrs', '1day', '3days', '1week', '2weeks', '1month', '3months', '6months']
+}

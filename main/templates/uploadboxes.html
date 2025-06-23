@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Upload File</title>
+</head>
+<body>
+  <input type="file" id="excelFile" />
+  <button onclick="uploadExcel()">Upload</button>
+  
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script>
+    function uploadExcel() {
+      const fileInput = document.getElementById("excelFile");
+      const file = fileInput.files[0];
+  
+      if (!file) {
+        alert("Please select a file first.");
+        return;
+      }
+  
+      const formData = new FormData();
+      formData.append("document", file);  // 'file' must match Django's expected key
+  
+      axios.post("http://localhost:8000/api/box/upload_boxes", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      })
+      .then(response => {
+        alert("Upload successful: " + response.data.message);
+      })
+      .catch(error => {
+        alert("Upload failed: " + (error.response?.data?.error || error.message));
+      });
+    }
+  </script>
+</body>
+</html>

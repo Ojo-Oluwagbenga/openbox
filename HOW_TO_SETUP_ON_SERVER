@@ -163,3 +163,6 @@ sudo chmod +x serve_openbox.sh
 
 DONE
 
+
+//RECENT LIBS
+pip install PyPDF2 Pillow
