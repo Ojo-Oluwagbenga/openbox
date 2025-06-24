@@ -1659,9 +1659,9 @@ class BoxAPI(View):
     @csrf_exempt
     def upload_boxes(self, response):
         if response.method == 'POST' and response.FILES.get('document'):
-            box = Box.objects.filter(box_code='BOX005')[0]
-            print (box.name)
-            return JsonResponse({'message': 'Boxes imported successfully'}, status=201)
+            # box = Box.objects.filter(box_code='BOX005')[0]
+            # print (box.name)
+            # return JsonResponse({'message': 'Boxes imported successfully'}, status=201)
 
             try:
                 file = response.FILES['document']
