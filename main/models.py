@@ -128,7 +128,8 @@ class Box_message(models.Model):
     message_type = models.CharField(max_length=50, default="ordinary") # different keys should be used here for different display E.G document_display, ordinary, transaction_success, e.t.c
     attached_task = models.CharField(max_length=50, default="none") # can be print, storage e.t.c
     text = models.CharField(max_length=600) 
-    document_url = models.CharField(max_length=100, default="none") 
+    document_url = models.CharField(max_length=200, default="none") 
+    document_address_code = models.CharField(max_length=100, default="none") 
     time = models.BigIntegerField(default=current_unix_time)
     otherdata = models.JSONField(null=True)
 
@@ -164,9 +165,12 @@ class Transaction(models.Model):
     data = models.JSONField(null=True) #This contains other important data to this like withdrawal data
 
 class Uploads_reference(models.Model):
+    address_code = models.CharField(max_length=100) 
     path = models.CharField(max_length=500) #CODE OF THE BOX IT IS CONTAINED
     time = models.FloatField(default=0) #THIS IS THE SIMPLE IDENTIFIER WRITTEN ON THE BOX
     user = models.CharField(max_length=100) 
+    file_name = models.CharField(max_length=100) 
+    file_size = models.CharField(max_length=100) 
     user_upload_count = models.IntegerField(default=0) 
     user_upload_sum_size = models.FloatField(default=0)
 

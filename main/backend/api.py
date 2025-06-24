@@ -126,29 +126,32 @@ class GeneralAPI:
 
     def readHash(hash, key):
         #CHECK KEY AND REPLACE THE REPLACED == WITH __
-        lenc = len(hash)
-        last_char = hash[lenc-1]
-        pre_last_char = hash[lenc-2]
-        _hash = hash
-        if (last_char == "_"):
-            _hash = GeneralAPI.replace_char(hash, lenc-1, "=")
-        if (pre_last_char == "_"):
-            _hash = GeneralAPI.replace_char(hash, lenc-2, "==")
-        hash = _hash
-        
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=b'rx2K2Iq356-f6VLqCdqQCNRwPAA4Vpg6fFrAgXaeHrU=',
-            iterations=390000,
-        )
-        _key = base64.urlsafe_b64encode(kdf.derive(str.encode(key)))
-        f = Fernet(_key)
         try:
-            dec = str(f.decrypt(str.encode(hash)), 'UTF-8')
-        except Exception as e:
-            dec = False
-        return dec
+            lenc = len(hash)
+            last_char = hash[lenc-1]
+            pre_last_char = hash[lenc-2]
+            _hash = hash
+            if (last_char == "_"):
+                _hash = GeneralAPI.replace_char(hash, lenc-1, "=")
+            if (pre_last_char == "_"):
+                _hash = GeneralAPI.replace_char(hash, lenc-2, "==")
+            hash = _hash
+            
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=b'rx2K2Iq356-f6VLqCdqQCNRwPAA4Vpg6fFrAgXaeHrU=',
+                iterations=390000,
+            )
+            _key = base64.urlsafe_b64encode(kdf.derive(str.encode(key)))
+            f = Fernet(_key)
+            try:
+                dec = str(f.decrypt(str.encode(hash)), 'UTF-8')
+            except Exception as e:
+                dec = False
+            return dec
+        except:
+            return False
 
     def create_user_data(user_json):
         rand_text = str(time.time()*random.random())
@@ -1076,21 +1079,22 @@ class UserAPI(View):
         return parts[0]
         
 
-    @csrf_exempt
+    # @csrf_exempt
     def add_document(self, response):
-        if response.method == 'POST' and response.FILES.get('document'):
+        if response.method == 'POST' and response.FILES.get('upload_file'):
             callresponse = {
                 'passed': False,
                 'response':{},
                 'error':{}
             }
-            data =  json.loads(response.body.decode('utf-8'))
+            data = response.POST
+            # data =  json.loads(response.body.decode('utf-8'))
             user_code = UserAPI.readApiKey(data['apiKey'])
             if (not user_code):
                 callresponse['Message'] = "Invalid access key"
                 return HttpResponse(json.dumps(callresponse))
             
-            uploaded_file = response.FILES['document']
+            uploaded_file = response.FILES['upload_file']
 
             # Define the path inside the static folder
             current_time = int(time.time())
@@ -1111,21 +1115,35 @@ class UserAPI(View):
                 user_upload_sum_size = user_upd.user_upload_sum_size
 
             upload_db = {
-                "path": file_path, #CODE OF THE BOX IT IS CONTAINED
-                "time": int(time.time()), #THIS IS THE SIMPLE IDENTIFIER WRITTEN ON THE BOX
+                "address_code":"dum",
+                "path": file_path, 
+                "time": int(time.time()), 
+                "file_size":uploaded_file.size,
+                "file_name": uploaded_file.name,
                 "user": user_code,
                 "user_upload_count": user_upload_count + 1,
                 "user_upload_sum_size":user_upload_sum_size + uploaded_file.size,
             }
             upload_db_sl = ModelSL(data={**upload_db}, model=Uploads_reference, extraverify={}) 
             upload_db_sl.is_valid() # MUST BE CALLED TO PROCEED
+            ins_id = upload_db_sl.save().__dict__['id']
+            address_code = numberEncode(ins_id, 10)
+            upload_db_sl.validated_data['address_code'] = address_code
             upload_db_sl.save()
 
-            file_url = f"https://openbox.bensons.africa/static/user_uploads/{user_code}/{current_time}/{uploaded_file.name}"
-            
+            document_url = f"https://openbox.bensons.africa/static/user_uploads/{user_code}/{current_time}/{uploaded_file.name}"
+            if (data.get('document_ref_message')): #THIS IS A MESSAGE THAT HAS BEEN UPLOADED THAT SHOULD BEAR THIS FILE URL
+                    boxm = Box_message.objects.filter(message_code=data.get('document_ref_message'))
+                    if boxm:
+                        boxm[0].document_address_code = address_code
+                        boxm[0].document_url = document_url
+                        boxm[0].save()
+
+
             callresponse['passed'] = True
             callresponse['response'] = {
-                'upload_url':file_url
+                'document_url':document_url,
+                'document_address_code':address_code
             }
             return HttpResponse(json.dumps(callresponse))
         return JsonResponse({'error': 'Invalid request'}, status=400)
@@ -1239,8 +1257,59 @@ class BoxAPI(View):
 
     def add_message(self, response):
         if (response.method == "POST"):
+            data =  json.loads(response.body.decode('utf-8'))
+            callresponse = {
+                'passed': False,
+                'response':400,
+            }
+            # callresponse['Message'] = "Invalid access key"
+            # return HttpResponse(json.dumps(callresponse))
+        
+            user_code = UserAPI.readApiKey(data['apiKey'])
+            if (not user_code):
+                callresponse['Message'] = "Invalid access key"
+                return HttpResponse(json.dumps(callresponse))
 
-            data =  response.POST
+            create_data = {}
+            box_code = data['box_code']
+            extension_type = data.get('extension_type') #dropbox, printbox #THIS IS THE CHAT TYPE
+            chat_code = extension_type + "-" + box_code + "-" + user_code
+            message_code = chat_code + "-" + str (time.time())
+
+            create_data['user_code'] = user_code
+            create_data['box_code'] = box_code
+            create_data['chat_code'] = chat_code
+            create_data['message_code'] = message_code
+            create_data['message_side'] = data.get('message_side')
+            create_data['message_type'] = data.get('message_type')
+            create_data['text'] = data['text']
+            create_data['document_url'] = data.get('document_url')
+            create_data['attached_task'] = "nil"
+            # create_data['time'] = time.time()
+
+            boxm_sl = ModelSL(data={**create_data}, model=Box_message, extraverify={}) 
+            if (not boxm_sl.is_valid()): # MUST BE CALLED TO PROCEED
+                callresponse['response'] = boxm_sl.cError()
+                return HttpResponse(json.dumps(callresponse))
+
+            boxm_sl.save()
+                       
+            callresponse = {
+                'passed': True,
+                'response':200,
+                'message_code':message_code,
+            }
+
+            return HttpResponse(json.dumps(callresponse))
+
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    def initiate_task(self, response):
+        if (response.method == "POST"):
+
+            data =  json.loads(response.body.decode('utf-8'))
+
             callresponse = {
                 'passed': False,
                 'response':400,
@@ -1259,63 +1328,14 @@ class BoxAPI(View):
 
             create_data = {}
             box_code = data['box_code']
-            extension_type = data.get('extension_type') #dropbox, printbox #THIS IS THE CHAT TYPE
-            chat_code = extension_type + "-" + box_code + "-" + user_code
-            message_code = chat_code + "-" + str (time.time())
-
-            create_data['user_code'] = user_code
-            create_data['box_code'] = box_code
-            create_data['chat_code'] = chat_code
-            create_data['message_code'] = message_code
-            create_data['message_side'] = data.get('message_side')
-            create_data['message_type'] = data.get('message_type')
-            create_data['text'] = data['text']
-            create_data['document_url'] = data.get('document_url')
-            create_data['attached_task'] = data.get('attached_task')
-            # create_data['time'] = time.time()
-
+            
             user = User.objects.filter(user_code=user_code)[0]
             box = Box.objects.filter(box_code=box_code)[0]
+            document_url = ""
             
-            if (data.get('attached_task') == 'print_doc'):                    
-
-                #UPLOAD THE DOCUMENT FOR PRINTING
-                uploaded_file = response.FILES['document_to_print']
-
-                current_time = int(time.time())
-                static_path = f'chat_uploads/{user_code}/{chat_code}/{current_time}'
-                upload_dir = os.path.join(settings.BASE_DIR, 'static', static_path)
-                os.makedirs(upload_dir, exist_ok=True)                
-                file_path = os.path.join(upload_dir, uploaded_file.name)
-                print (file_path)
-                file_url = f"https://openbox.bensons.africa/static/{static_path}/{uploaded_file.name}"
+            if (data.get('task_type') == 'print_doc'):    
+                document_url = data.get("document_url")      
                 
-                with open(file_path, 'wb+') as dest:
-                    for chunk in uploaded_file.chunks():
-                        dest.write(chunk)
-
-                #UPDATE THE UPLOADS TRACKING TABLE
-                user_upd = Uploads_reference.objects.filter(user=user_code).last()                
-                user_upload_count = 0
-                user_upload_sum_size = 0
-                if (user_upd):
-                    user_upload_count = user_upd.user_upload_count
-                    user_upload_sum_size = user_upd.user_upload_sum_size
-
-                upload_db = {
-                    "path": file_path,
-                    "time": int(time.time()),
-                    "user": user_code,
-                    "user_upload_count": user_upload_count + 1,
-                    "user_upload_sum_size":user_upload_sum_size + uploaded_file.size,
-                }
-                upload_db_sl = ModelSL(data={**upload_db}, model=Uploads_reference, extraverify={}) 
-                if not upload_db_sl.is_valid(): # MUST BE CALLED TO PROCEED
-                    print ("Unable to add upload record")
-                    print (upload_db_sl.cError())
-                upload_db_sl.save()
-
-
                 #BILL THE USER BEFORE INITIATING TASK  
                 # number_of_pages = int(data['pages_range'][1]) - int(data['pages_range'][0]) 
                 number_of_pages = 10
@@ -1331,15 +1351,7 @@ class BoxAPI(View):
 
                 user.cashbalance -= print_price
                 user.save()
-                NotificationAPI.send({
-                    "callback_url":'-',
-                    "text":"Your account has been billed #"+str(print_price)+" for the printing service!",
-                    "time":'date',
-                    "category":"pay",
-                    "owners":[user_code],
-                    "otherdata":{}, #Any other data useful for that notification
-                })
-                
+
                 #INSERT TRANSACTION 
                 add_trans = TransactionAPI.add_transaction({
                     "payer_code":user_code,
@@ -1351,8 +1363,20 @@ class BoxAPI(View):
                 })
                 if (not add_trans):
                     callresponse['passed'] = False,
-                    return HttpResponse(json.dumps(callresponse))
+                    print ("Error logging transaction in the records")
+                    # return HttpResponse(json.dumps(callresponse))
                         
+
+                NotificationAPI.send({
+                    "callback_url":'-',
+                    "text":"Your account has been billed #"+str(print_price)+" for the printing service!",
+                    "time":'date',
+                    "category":"pay",
+                    "owners":[user_code],
+                    "otherdata":{}, #Any other data useful for that notification
+                })
+                
+                
 
                 #START A PRINTING TASK                
                 pg_hole_id = "nil"
@@ -1384,7 +1408,7 @@ class BoxAPI(View):
                     "pg_id": pg_hole_id, #THE CURRENT SPECIFIC PG HOLE 
                     "package_data": {
                         "package_type":"print_doc",
-                        "document_source_url":file_url,
+                        "document_source_url":document_url,
                         "package_weight":"estimate_with_print_pages",
                         'task_history':[],
                         'holding_start':time.time(),
@@ -1407,13 +1431,6 @@ class BoxAPI(View):
 
                 #NOTIFY THE BOX OF A PRINTING BY UPDATING BOX FIREBASE ENTRY
                 #tasks/box_id:[task_codes]
-                # db_data = FcmAPI.get_firedb_data('tasks/'+box_code)
-                # upload_data = db_data[1]
-                
-                # upload_data.append(task_code)
-                # ref = db_data[1]
-                # ref.update(upload_data)
-
                 db_data = FcmAPI.get_firedb_data('tasks/' + box_code)
                 ref = db_data[0]
                 upload_data = db_data[1] or []
@@ -1442,12 +1459,12 @@ class BoxAPI(View):
                     'access_code':access_code
                 }
 
-            if (data.get('message_type') == 'store_package'):
+            if (data.get('task_type') == 'store_package'):
                 #BILL THE USER BEFORE INITIATING TASK  
-                storage_price = box.storage_price_data[data['duration_key']]
-                if (user.cashbalance < storage_price):
-                    callresponse['response'] = 'Cash Out of Balance'
-                    return HttpResponse(json.dumps(callresponse))
+                storage_price = box.storage_price_data[0][data['duration_key']]
+                # if (user.cashbalance < storage_price):
+                #     callresponse['response'] = 'Cash Out of Balance'
+                #     return HttpResponse(json.dumps(callresponse))
 
                 user.cashbalance -= storage_price
                 user.save()
@@ -1473,8 +1490,8 @@ class BoxAPI(View):
                     #USE ANY AVAILABLE EVEN PRINT HOLES
                     # if (ph['default_use'] != 'storage_hole'):
                     #     continue
-                    if (ph['status'] != '0'): 
-                        continue
+                    # if (ph['status'] != '0'): 
+                    #     continue
                     pg_hole_id = ph['identifier']
                     phindex += 1
                     break
@@ -1487,10 +1504,11 @@ class BoxAPI(View):
 
                 task_data = {
                     "task_code": 'dummy',
+                    "user_code" : user_code,
                     "task_type" : "storage", #COULD BE print, storage, movement
                     "access_code": access_code, #GENERATE A RANDOM 4-DIGIT CODE
                     "box_code": box_code, #THE CURRENT BOX PERFORMNG THIS TASK
-                    "pg_code": pg_hole_id, #THE CURRENT SPECIFIC PG HOLE 
+                    "pg_id": pg_hole_id, #THE CURRENT SPECIFIC PG HOLE 
                     "status":'active',
                     "package_data": {
                         "package_type":"user_package",
@@ -1501,7 +1519,10 @@ class BoxAPI(View):
                     }
                 }
                 task_sl = ModelSL(data={**task_data}, model=Task, extraverify={}) 
-                task_sl.is_valid() # MUST BE CALLED TO PROCEED
+                if (not task_sl.is_valid()): # MUST BE CALLED TO PROCEED
+                    print ("error occ")
+                    print (task_sl.cError())
+
                 ins_id = task_sl.save().__dict__['id']
                 task_code = numberEncode(ins_id, 10)
                 task_sl.validated_data['task_code'] = task_code
@@ -1528,18 +1549,10 @@ class BoxAPI(View):
                     'access_code':access_code
                 }
 
-
-            boxm_sl = ModelSL(data={**create_data}, model=Box_message, extraverify={}) 
-            if (not boxm_sl.is_valid()): # MUST BE CALLED TO PROCEED
-                print ("error occure")
-                print(boxm_sl.cError())
-
-            boxm_sl.save()
-                       
+            
             callresponse = {
                 'passed': True,
                 'response':200,
-                'message_code':message_code,
                 'response_text':response_text,
                 'response_data':response_data,
             }
@@ -1549,11 +1562,11 @@ class BoxAPI(View):
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
 
+
     def fetch_messages(self, response):
         if (response.method == "POST"):
             data =  json.loads(response.body.decode('utf-8'))
 
-            user_code = response.session['user_data']['user_code']
             chat_code = data['chat_code']
             time_range = data.get('time_range') # [timestart, timeend]
             count = int (data.get('count', 10))
@@ -1616,21 +1629,23 @@ class BoxAPI(View):
 
             searchquery = {
                 "chat_code": chat_code,
-                "time__range":(last_message_time, time.time())
+                "time__range":(last_message_time+1, time.time()) #THE +1 IS TO ENSURE THE TIME BEARER DOES NOT GET SENT BACK
             }
 
             # Query the database with the searchquery dictionary
             messages = Box_message.objects.filter(**searchquery).order_by('time')
 
             # Limit the number of messages if `count` is provided
-            if data.get('last_message_time'):
-                messages = messages[:data.get('last_message_time')]
+            messages = list(messages.values()) # Convert QuerySet to a list of dictionaries
+            if data.get('count'):
+                print (messages)
+                messages = messages[:data.get('count')]
 
             # Prepare the response
             callresponse = {
                 'passed': True,
                 'response': 200,
-                'queryset': list(messages.values())  # Convert QuerySet to a list of dictionaries
+                'queryset':  messages
             }
 
             return HttpResponse(
@@ -1800,6 +1815,7 @@ class TransactionAPI:
             b2d = balance2date+transaction_data['amount']
         if (transaction_data['type'] == 'out'):
             b2d = balance2date - transaction_data['amount']
+        
             
         transaction_data = {
             **transaction_data,
@@ -1967,10 +1983,14 @@ class TransactionAPI:
 
     def fetch_transaction(self, response):
         if (response.method == "POST"):
-            transact_code =  json.loads(response.body.decode('utf-8')).get('receipt_code', [])
-   
-            fetchpair = {'transact_code' : transact_code}
-            fetchset = ['payer_code','amount','type', 'date']
+            data =  json.loads(response.body.decode('utf-8'))
+            user_code = UserAPI.readApiKey(data['apiKey'])
+            if (not user_code):
+                callresponse['Message'] = "Invalid access key"
+                return HttpResponse(json.dumps(callresponse))
+            
+            fetchpair = {'payer_code' : user_code}
+            fetchset = ['payer_code','amount','type', 'time', 'item_code', 'description']
 
             callresponse = {
                 'passed': False,
@@ -2076,7 +2096,7 @@ class TransactionAPI:
 
             reference = outstanding.reference_code
             print ("Reference: " + reference )
-            pay_code = outstanding.item_code
+            # pay_code = outstanding.item_code
 
             params = {
                 # "Authorization":"Bearer sk_live_eabc4113227dc2530121c270fde2497ca123527c",
@@ -2118,7 +2138,7 @@ class TransactionAPI:
             charges = 0
             amount_paid = amount_paid - charges
 
-            callresponse = self.add_user_payment(response=response, channel_code=pay_code, amount=amount_paid, pay_req_data=tdata)
+            callresponse = self.add_user_payment(response=response, amount=amount_paid, pay_req_data=tdata)
             return HttpResponse(json.dumps(callresponse))
 
         else:
@@ -2174,7 +2194,6 @@ class TransactionAPI:
             data =  json.loads(response.body.decode('utf-8'))
 
             reference = data['reference']
-            pay_code = data['pay_code']
             user_code = UserAPI.readApiKey(data['apiKey'])
             if (not user_code):
                 callresponse['Message'] = "Invalid access key"
@@ -2235,7 +2254,7 @@ class TransactionAPI:
             #     PayTransact.objects.filter(user_code=user_code)[0].delete()
             #     return HttpResponse(json.dumps(callresponse))
 
-            callresponse = self.add_user_payment(response=response, channel_code=pay_code, amount=amount_paid, pay_req_data=tdata)
+            callresponse = self.add_user_payment(response=response, amount=amount_paid, pay_req_data=tdata)
             return HttpResponse(json.dumps(callresponse))
 
         else:
@@ -2267,26 +2286,15 @@ class TransactionAPI:
         if (recent_transact):
             balance2date = recent_transact.balance_to_date
 
-        transaction_data = {
-            "transact_code":"__",
+        add_trans = TransactionAPI.add_transaction({
             "payer_code":user_code,
-            "type":"in",
-            "balance_to_date":balance2date+amount_paid,
+            "type":'out',
             "amount":amount_paid,
-            "date":datetime.now().isoformat(),
-        }
-        sl = ModelSL(data=transaction_data, model=Transaction, extraverify={})
-
-        if (sl.is_valid()):
-            callresponse = sl.callresponse
-        else:
-            callresponse = sl.cError()
-            return callresponse
-
-        if (callresponse['passed']):
-            ins_id = sl.save().__dict__['id']
-            sl.validated_data['transact_code'] = numberEncode(ins_id, 10)
-            sl.save()
+            "user_balance_to_date":userdt.cashbalance,
+            "item_code":"top-up",
+            "description":"Payment for printing and storage"
+        })
+        
 
         PayTransact.objects.filter(user_code=user_code)[0].delete()
 
@@ -2397,19 +2405,12 @@ class NotificationAPI:
     def fetch_user_notifications(self, response):
         if (response.method == "POST"):
             data =  json.loads(response.body.decode('utf-8'))
-
-            user_code = response.session['user_data']['user_code']
-            # class_code = response.session['user_data'].get('class_code', '-')
-
-            fetchset = []
-
-            user_code = response.session['user_data']['user_code']
-            # userset = User.objects.filter(user_code=user_code).values("groups")
-            # ugroups = userset[0]['groups']
-            # ngroups = []
-            # for gp in ugroups:
-                # ngroups.append("__"+gp + "__")
-
+            
+            user_code = UserAPI.readApiKey(data['apiKey'])
+            if (not user_code):
+                callresponse['Message'] = "Invalid access key"
+                return HttpResponse(json.dumps(callresponse))
+            
             querypair={
                 "owners__overlap":["__all__", user_code] #Gets where the owners list contains any of the passed
             }
@@ -2418,7 +2419,7 @@ class NotificationAPI:
 
             if (qset.count() == 0):
                 callresponse = {
-                    'passed': False,
+                    'passed': True,
                     'response':201,
                     'queryset':[]
                 }
