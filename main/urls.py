@@ -1,11 +1,9 @@
-from django.contrib import admin
 from django.urls import path
 from . import views
 
 
 
 urlpatterns = [    
-    path('admin/', admin.site.urls),
     path("login", views.login, name="login"),
     path("bluetest", views.bluetest, name="login"),
     path("upload_boxes", views.uploadboxes, name="uploadboxes"),
