@@ -17,6 +17,7 @@ import random
 import pandas as pd
 import ast
 from datetime import datetime
+from math import radians, cos, sin, asin, sqrt
 
 
 
@@ -1254,6 +1255,105 @@ class BoxAPI(View):
             return HttpResponse(json.dumps(callresponse))
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    def find_box_by_search(self, response):
+        if (response.method == "POST"):
+            data =  json.loads(response.body.decode('utf-8'))
+            callresponse = {
+                'passed': False,
+                'response':{},
+                'error':{}
+            }
+            query = data['search_text']
+            
+            boxes = Box.objects.filter(
+                Q(name__icontains=query) |
+                Q(address__icontains=query) |
+                Q(description__icontains=query) |
+                Q(state__icontains=query)
+            ).annotate(
+                priority=models.Case(
+                    models.When(name__icontains=query, then=1),
+                    models.When(address__icontains=query, then=2),
+                    models.When(description__icontains=query, then=3),
+                    models.When(state__icontains=query, then=4),
+                    default=5,
+                    output_field=models.IntegerField(),
+                )
+            ).order_by('priority', 'name')
+
+            retboxes = []
+            for box in boxes:
+                ret = {}
+                print (box)
+                if (data.get("columns")):
+                    for column in data['columns']:
+                        ret[column] = box.__dict__[column]
+                else:
+                    ret['name'] = box.name
+                    ret['address'] = box.address
+                    ret['description'] = box.description
+                    ret['status'] = box.status
+
+                retboxes.append(ret)
+                
+
+            callresponse['passed'] = True
+            callresponse['response'] = {
+                "boxes":retboxes
+            }
+            return HttpResponse(json.dumps(callresponse))
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    def find_box_by_geolocation(self, response):
+        if (response.method == "POST"):
+            data =  json.loads(response.body.decode('utf-8'))
+            callresponse = {
+                'passed': False,
+                'response':{},
+                'error':{}
+            }
+            
+            boxes = Box.objects.filter(city=data['city'])
+            result = []
+
+            for box in boxes:
+                print("The")
+                dist = BoxAPI.haversine(data['lat'], data['long'], box.latitude, box.longitude)
+                if dist <= data['dist_km']:
+                    ret = {}
+                    if (data.get("columns")):
+                        for column in data['columns']:
+                            ret[column] = box.__dict__[column]
+                    else:
+                        ret['name'] = box.name
+                        ret['address'] = box.address
+                        ret['description'] = box.description
+                        ret['status'] = box.status
+                    result.append((ret, dist))
+
+            # Optional: sort by nearest first
+            result.sort(key=lambda x: x[1])
+
+            callresponse['passed'] = True
+            callresponse['response'] = {
+                "boxes":[box for box, _ in result]
+            }
+            return HttpResponse(json.dumps(callresponse))
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    def haversine(lat1, lon1, lat2, lon2):
+        """
+        Calculate the great-circle distance between two points (in kilometers).
+        """
+        R = 6371  # Earth radius in km
+        dlat = radians(lat2 - lat1)
+        dlon = radians(lon2 - lon1)
+        a = sin(dlat/2)**2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon/2)**2
+        c = 2 * asin(sqrt(a))
+        return R * c
 
     def add_message(self, response):
         if (response.method == "POST"):
