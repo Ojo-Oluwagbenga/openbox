@@ -1099,7 +1099,7 @@ class UserAPI(View):
 
             # Define the path inside the static folder
             current_time = int(time.time())
-            upload_dir = os.path.join(settings.BASE_DIR, 'static', f'user_uploads/{user_code}/{current_time}')
+            upload_dir = os.path.join(settings.BASE_DIR, 'media', f'user_uploads/{user_code}/{current_time}')
             os.makedirs(upload_dir, exist_ok=True)
             
             file_path = os.path.join(upload_dir, uploaded_file.name)
@@ -1132,13 +1132,13 @@ class UserAPI(View):
             upload_db_sl.validated_data['address_code'] = address_code
             upload_db_sl.save()
 
-            document_url = f"https://openbox.bensons.africa/static/user_uploads/{user_code}/{current_time}/{uploaded_file.name}"
+            document_url = f"https://openbox.bensons.africa/media/user_uploads/{user_code}/{current_time}/{uploaded_file.name}"
             if (data.get('document_ref_message')): #THIS IS A MESSAGE THAT HAS BEEN UPLOADED THAT SHOULD BEAR THIS FILE URL
-                    boxm = Box_message.objects.filter(message_code=data.get('document_ref_message'))
-                    if boxm:
-                        boxm[0].document_address_code = address_code
-                        boxm[0].document_url = document_url
-                        boxm[0].save()
+                boxm = Box_message.objects.filter(message_code=data.get('document_ref_message'))
+                if boxm:
+                    boxm[0].document_address_code = address_code
+                    boxm[0].document_url = document_url
+                    boxm[0].save()
 
 
             callresponse['passed'] = True
@@ -1182,6 +1182,7 @@ class UserAPI(View):
                     "name":box.name,
                     "description":box.description,
                     "address":box.address,
+                    "box_code":box.box_code
                 }
                 recent_tasks.append(pub_task)
 
@@ -1255,6 +1256,7 @@ class BoxAPI(View):
             return HttpResponse(json.dumps(callresponse))
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
 
     def find_box_by_search(self, response):
         if (response.method == "POST"):
@@ -1530,18 +1532,26 @@ class BoxAPI(View):
                 box.save()
 
                 #NOTIFY THE BOX OF A PRINTING BY UPDATING BOX FIREBASE ENTRY
-                #tasks/box_id:[task_codes]
-                db_data = FcmAPI.get_firedb_data('tasks/' + box_code)
-                ref = db_data[0]
-                upload_data = db_data[1] or []
-
-                if isinstance(upload_data, list):
-                    upload_data.append(task_code)
-                    ref.set(upload_data)  # use set() for list data
+                #YOU CAN SWITCH TO REALTIME DATA FETCHING LATER
+                notice = Task_Notice.objects.filter(box_code=box_code) #THIS ENDPOINT IS LONG POLLED
+                if not notice:
+                    nt_data = {
+                        "has_job": True,
+                        "box_code":box_code,
+                        "task_codes":[task_code],
+                        "upd_code":int(time.time()),
+                    }
+                    task_sl = ModelSL(data={**nt_data}, model=Task_Notice, extraverify={}) 
+                    if (not task_sl.is_valid()): # MUST BE CALLED TO PROCEED
+                        print (task_sl.cError())
+                    task_sl.save()                    
                 else:
-                    ref.set([task_code]) 
-
-                    
+                    notice = notice[0]
+                    notice.task_codes.append(task_code)
+                    notice.upd_code = time.time()
+                    notice.has_job = True
+                    notice.save()
+                                       
 
                 NotificationAPI.send({
                     "callback_url":'-',
@@ -1662,7 +1672,6 @@ class BoxAPI(View):
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
 
-
     def fetch_messages(self, response):
         if (response.method == "POST"):
             data =  json.loads(response.body.decode('utf-8'))
@@ -1755,6 +1764,56 @@ class BoxAPI(View):
 
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    def get_near_messages(self, response):
+        if (response.method == "POST"):
+            data =  json.loads(response.body.decode('utf-8'))
+
+            user_code = UserAPI.readApiKey(data['apiKey'])
+            if (not user_code):
+                callresponse['Message'] = "Invalid access key"
+                return HttpResponse(json.dumps(callresponse))
+            
+            chat_code = data['chat_code']
+            message_code = data.get('last_message_code') 
+            message_time = data.get('last_message_time') # Optional
+            count = data.get('count', -10)
+
+            searchquery = {
+                "chat_code": chat_code,
+                "message_code": message_code,
+            }
+
+            # Check if time_range is provided (it should be a tuple or list of 2 values: start time, end time)
+            if not message_time:
+                messages = Box_message.objects.filter(**searchquery)
+                if (messages):
+                    message_time = messages[0].time
+                else:
+                    message_time = 0
+
+            if (count > 0):
+                messages = Box_message.objects.filter(chat_code=chat_code, time__gt=message_time).order_by('id').values()
+                messages = list(messages[:count])
+            else:
+                count = -count
+                messages = list(Box_message.objects.filter(chat_code=chat_code, time__lt=message_time).order_by('-id').values()[:count])[::-1]
+            
+            # Prepare the response
+            callresponse = {
+                'passed': True,
+                'response': 200,
+                'queryset':  messages
+            }
+
+            return HttpResponse(
+                json.dumps(callresponse),
+                content_type="application/json"
+            )
+
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
 
     @csrf_exempt
     def upload_boxes(self, response):

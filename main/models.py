@@ -119,6 +119,12 @@ class Task(models.Model):
         }
     '''
 
+class Task_Notice(models.Model):
+    box_code = models.CharField(max_length=50)
+    has_job = models.BooleanField() #True MEANS HAVING A JOB, False IS OTHERWISE
+    task_codes = ArrayField(models.CharField(max_length=50))
+    upd_code = models.BigIntegerField(default=0) #THIS IS TIME IN SEC
+
 class Box_message(models.Model):
     message_code = models.CharField(max_length=100) 
     chat_code = models.CharField(max_length=100) #THIS IS CAN BE ext-boxcode(print-boxcode, drop-boxcode) 

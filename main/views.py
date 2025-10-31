@@ -4,6 +4,7 @@ from django.shortcuts import redirect
 from django.views.decorators.csrf import csrf_exempt
 from django.http import JsonResponse
 import os
+from .models import Task_Notice, Task
 
 
 # Create your views here.
@@ -65,6 +66,44 @@ def bluetest(response):
 
 def uploadboxes(response):
     return render(response, "uploadboxes.html", {})
+
+def get_box_notice(response):
+    box_code = response.GET.get('box_code')
+    upd_code = response.GET.get('upd_code')
+
+    print (box_code)
+
+    notices = Task_Notice.objects.filter(box_code=box_code)
+    print(notices)
+    if (not notices):
+        print("box unfound")
+        return JsonResponse({'has_job': False})
+    notice = notices[0]
+    if not notice.has_job:
+        print("box found")
+        return JsonResponse({'has_job': False})
+    if notice.upd_code == upd_code:
+        notice.delete()
+        return JsonResponse({'has_job': False})
+         
+    return JsonResponse({
+        'has_job': True,
+        "task_codes":notice.task_codes,
+        'upd_code':notice.upd_code
+    })
+
+def check_task_status(response):
+    task_code = response.GET.get('task_code')
+    tasks = Task.objects.filter(task_code=task_code)
+    if (not tasks):
+        print("task unfound")
+        return JsonResponse({'status': "Task does not exist"})
+    task = tasks[0]
+    return JsonResponse({
+        'status': task.status,
+        'time_started':task.time_in,
+        'time_completed':task.time_completed
+    })
 
 def error_view(response):
     return render(response, "error_view.html", {})
