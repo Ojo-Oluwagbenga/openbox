@@ -1030,6 +1030,7 @@ class UserAPI(View):
                 'loggedin':True,
                 "email":u_data.email,
                 "user_type":u_data.user_type,
+                "user_code":u_data.user_code,
                 "name":u_data.name,
             }
             callresponse['response'] = {**new_data}
@@ -1132,7 +1133,7 @@ class UserAPI(View):
             upload_db_sl.validated_data['address_code'] = address_code
             upload_db_sl.save()
 
-            document_url = f"https://openbox.bensons.africa/media/user_uploads/{user_code}/{current_time}/{uploaded_file.name}"
+            document_url = f"/media/user_uploads/{user_code}/{current_time}/{uploaded_file.name}"
             if (data.get('document_ref_message')): #THIS IS A MESSAGE THAT HAS BEEN UPLOADED THAT SHOULD BEAR THIS FILE URL
                 boxm = Box_message.objects.filter(message_code=data.get('document_ref_message'))
                 if boxm:
@@ -1188,6 +1189,35 @@ class UserAPI(View):
 
             callresponse['passed'] = True 
             callresponse['recent_tasks'] = recent_tasks
+            return HttpResponse(json.dumps(callresponse))
+        else:
+            return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")
+
+    def get_user_data(self, response):
+        if (response.method == "POST"):
+            callresponse = {
+                'passed': False,
+                'error':{}
+            }
+            data =  json.loads(response.body.decode('utf-8'))
+            user_code = UserAPI.readApiKey(data['apiKey'])
+            columns = data.get("columns", ["name", "cashbalance"])
+            if (not user_code):
+                callresponse['Message'] = "Invalid access key"
+                return HttpResponse(json.dumps(callresponse))
+            
+            user_data = {}
+            user = User.objects.filter(user_code=user_code).values()
+            if (not user):
+                callresponse['Message'] = "User is not found"
+                return HttpResponse(json.dumps(callresponse))
+           
+            user = user[0]
+            for key in columns:
+                user_data[key] = user[key]
+
+            callresponse['passed'] = True 
+            callresponse['user_data'] = user_data 
             return HttpResponse(json.dumps(callresponse))
         else:
             return HttpResponse("<div style='position: fixed; height: 100vh; width: 100vw; text-align:center; display: flex; justify-content: center; flex-direction: column; font-weight:bold>Page Not accessible<div>")

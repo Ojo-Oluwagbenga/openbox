@@ -68,6 +68,7 @@ def uploadboxes(response):
     return render(response, "uploadboxes.html", {})
 
 def get_box_notice(response):
+    print ("Got here")
     box_code = response.GET.get('box_code')
     upd_code = response.GET.get('upd_code')
 
@@ -99,10 +100,16 @@ def check_task_status(response):
         print("task unfound")
         return JsonResponse({'status': "Task does not exist"})
     task = tasks[0]
+    durl = ""
+    task_type = task.package_data['package_type']
+    if task_type == "print_doc":
+        durl = task.package_data["document_source_url"]
     return JsonResponse({
         'status': task.status,
         'time_started':task.time_in,
-        'time_completed':task.time_completed
+        'time_completed':task.time_completed,
+        'doc_url':durl, 
+        "task_type": task_type
     })
 
 def error_view(response):
