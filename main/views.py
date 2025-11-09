@@ -72,6 +72,7 @@ def get_box_notice(response):
     box_code = response.GET.get('box_code')
     upd_code = response.GET.get('upd_code')
 
+    print (upd_code)
     print (box_code)
 
     notices = Task_Notice.objects.filter(box_code=box_code)
@@ -83,7 +84,7 @@ def get_box_notice(response):
     if not notice.has_job:
         print("box found")
         return JsonResponse({'has_job': False})
-    if notice.upd_code == upd_code:
+    if str(notice.upd_code) == str(upd_code):
         notice.delete()
         return JsonResponse({'has_job': False})
          
