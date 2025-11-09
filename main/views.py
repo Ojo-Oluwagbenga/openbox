@@ -85,6 +85,11 @@ def get_box_notice(response):
         print("box found")
         return JsonResponse({'has_job': False})
     if str(notice.upd_code) == str(upd_code):
+        tasks = Task.objects.filter(task_code__in=notice.task_codes)
+        for tk in tasks:
+            tk.status = "completed"
+            tk.save()
+
         notice.delete()
         return JsonResponse({'has_job': False})
          
